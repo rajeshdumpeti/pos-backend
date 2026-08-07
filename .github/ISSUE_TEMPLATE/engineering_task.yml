@@ -1,0 +1,37 @@
+name: Engineering task
+description: Propose bounded technical work for POS Backend.
+title: "chore: "
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Intended outcome
+      description: Describe the API or engineering outcome.
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope
+      description: List what is included and explicitly excluded.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Include tests, contract expectations, and observable completion criteria.
+    validations:
+      required: true
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and dependencies
+      description: Note API, data, environment, security, privacy, logging, or cross-repository dependencies.
+  - type: checkboxes
+    id: phase
+    attributes:
+      label: Architecture boundary
+      options:
+        - label: This task respects the local in-memory MVP boundary and does not introduce production infrastructure.
+          required: true
