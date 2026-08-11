@@ -38,3 +38,10 @@ endpoint is `GET /health`.
 
 All mutations are held in memory and reset when the server restarts. The
 development CORS policy must not be treated as production configuration.
+
+## Architecture
+
+The current API is organized into concrete delivery, application, domain,
+infrastructure, and core boundaries. See
+[`docs/backend-architecture.md`](docs/backend-architecture.md) for responsibilities,
+dependency direction, and placement rules for future approved work.
