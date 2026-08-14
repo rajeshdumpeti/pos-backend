@@ -10,9 +10,22 @@ safe empty placeholders only.
 ### Local
 
 Copy `.env.example` to an ignored `.env` file when local overrides are needed,
-then export or otherwise load those values into the server process. The current
-in-memory mock API needs no database, Redis, or JWT secret. Its existing local
-permissive CORS behavior remains the default when `CORS_ORIGINS` is empty.
+then load it with Uvicorn's documented `--env-file` option:
+
+```bash
+cp .env.example .env
+python -m uvicorn app.main:app --reload --port 8000 --env-file .env
+```
+
+On Windows PowerShell, create the file with
+`Copy-Item .env.example .env`. The server command is otherwise the same. When no
+local overrides are needed, `.env` is optional and the server may be started
+without `--env-file .env`.
+
+The current in-memory mock API needs no database, Redis, or JWT secret. Its
+existing local permissive CORS behavior remains the default when `CORS_ORIGINS`
+is empty. See the repository [README](../../README.md) for the complete setup and
+validation workflow.
 
 ### Development
 

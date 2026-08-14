@@ -12,13 +12,9 @@ Do not commit directly to shared protected branches once protection is enabled.
 
 ## Local validation
 
-Use the ignored local virtual environment:
-
-```bash
-.venv/bin/python -m pytest
-.venv/bin/python -m compileall app
-.venv/bin/python -c "from app.main import app"
-```
+Use the Python 3.12 `.venv` workflow and validation commands in the
+[README](README.md). The README is the source of truth for first-time setup,
+daily server startup, environment readiness, and troubleshooting.
 
 Keep changes focused. Do not commit virtual environments, caches, real
 environment files, credentials, certificates, service-account files, or private
