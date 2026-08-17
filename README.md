@@ -53,6 +53,11 @@ contains only safe local values; PostgreSQL, Redis, and JWT configuration remain
 optional. See [environment variables](docs/devops/environment-variables.md) for
 details.
 
+Configuration is validated when the application is created. Invalid variables
+fail with the variable name and a safe correction message without echoing
+sensitive values. Supported `APP_ENV` values are `local`, `development`, `test`,
+`staging`, and `production`; local startup defaults to `local`.
+
 ## Daily development
 
 Activate the existing environment, then start the development server:
@@ -116,6 +121,9 @@ setup script would duplicate them without adding a stable prerequisite check.
   guidance for the current user, then retry `.venv\Scripts\Activate.ps1`.
 - **The server cannot read `.env`:** create it from `.env.example`, or omit
   `--env-file .env` when no local overrides are needed.
+- **Startup reports an invalid configuration variable:** correct the named value
+  in the process environment or ignored `.env`. Error messages intentionally do
+  not repeat database URLs, Redis URLs, or JWT secrets.
 - **`curl` cannot connect:** confirm Uvicorn is still running and that the command
   and URL use the same port.
 - **Port 8000 is already in use:** stop the other local process or choose another
