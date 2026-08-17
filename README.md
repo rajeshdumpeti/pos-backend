@@ -141,4 +141,6 @@ configuration.
 The current API is organized into concrete delivery, application, domain,
 infrastructure, and core boundaries. See
 [backend architecture](docs/backend-architecture.md) for responsibilities,
-dependency direction, and placement rules for future approved work.
+dependency direction, and placement rules for future approved work. Shared HTTP
+contracts, errors, request IDs, lifecycle, and pagination policy are defined in
+[API conventions](docs/api-conventions.md).

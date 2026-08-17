@@ -2,10 +2,10 @@
 
 from fastapi import FastAPI
 
-from app.api import create_api_router
+from app.api import create_api_router, register_exception_handlers
 from app.application import MockResourceService
 from app.config import Settings, load_settings
-from app.core import configure_cors
+from app.core import configure_cors, configure_request_ids
 from app.infrastructure import InMemoryResourceStore
 
 
@@ -15,6 +15,8 @@ def create_app(app_settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title="POS Local Mock API", version="0.1.0")
 
     configure_cors(application, resolved_settings)
+    configure_request_ids(application)
+    register_exception_handlers(application)
 
     resource_store = InMemoryResourceStore()
     resource_service = MockResourceService(resource_store)
