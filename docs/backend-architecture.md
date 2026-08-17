@@ -24,6 +24,8 @@ contracts belong in `app/api/schemas.py` or a focused schema package when needed
 Route handlers may validate HTTP input, call one application use case, and map its
 result or errors to HTTP. They must not read environment variables, construct
 infrastructure, own mutable stores, or contain substantial business logic.
+Shared exception handlers translate domain and validation failures into the
+typed contract defined in [`api-conventions.md`](api-conventions.md).
 
 ### Application — `app/application`
 
@@ -48,8 +50,9 @@ integrations belong here, but their introduction requires a separate milestone.
 ### Core and configuration — `app/core` and `app/config.py`
 
 `app/config.py` remains the only environment-reading module. `app/core` contains
-central framework concerns; currently it applies the shared CORS policy. Business
-rules and infrastructure construction do not belong in either location.
+central framework concerns; currently it applies the shared CORS and request-ID
+policies. Business rules and infrastructure construction do not belong in either
+location.
 
 ## Dependency direction
 
