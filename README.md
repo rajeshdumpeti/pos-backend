@@ -8,6 +8,7 @@ architecture.
 
 - Python 3.12.x
 - FastAPI and Pydantic
+- SQLAlchemy 2.x and Psycopg 3 data-access foundation
 - Uvicorn
 - pytest and HTTPX
 
@@ -131,10 +132,11 @@ setup script would duplicate them without adding a stable prerequisite check.
 
 ## Current limitations
 
-All mutations are held in memory and reset when the server restarts. Local
-startup requires no PostgreSQL, Redis, migration, authentication, or cloud
-service. The development CORS policy must not be treated as production
-configuration.
+All current API mutations are held in memory and reset when the server restarts.
+The SQLAlchemy/Psycopg foundation is available only for explicit future
+composition; `DATABASE_URL` does not select it automatically. Local startup and
+CI require no PostgreSQL, Redis, migration, authentication, or cloud service.
+The development CORS policy must not be treated as production configuration.
 
 ## Architecture
 
@@ -143,4 +145,6 @@ infrastructure, and core boundaries. See
 [backend architecture](docs/backend-architecture.md) for responsibilities,
 dependency direction, and placement rules for future approved work. Shared HTTP
 contracts, errors, request IDs, lifecycle, and pagination policy are defined in
-[API conventions](docs/api-conventions.md).
+[API conventions](docs/api-conventions.md). Engine, session, transaction,
+connectivity, and persistence-error ownership are defined in
+[data access](docs/data-access.md).

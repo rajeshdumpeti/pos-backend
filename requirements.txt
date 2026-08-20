@@ -3,3 +3,5 @@ uvicorn[standard]==0.34.2
 pydantic==2.11.5
 pytest==8.3.5
 httpx==0.28.1
+SQLAlchemy==2.0.51
+psycopg[binary]==3.3.4

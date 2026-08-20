@@ -7,10 +7,11 @@ production database, authentication, Redis, or deployment architecture.
 ## Composition
 
 `app/main.py` is the single application composition point. `create_app()` selects
-the current in-memory infrastructure, creates the application service, registers
-the API router, applies centralized CORS configuration, and returns an isolated
-FastAPI application. The module-level `app` remains the ASGI entry point used by
-Uvicorn and CI.
+the current in-memory repository and unit of work by default, creates the
+application service, registers the API router, applies centralized CORS
+configuration, and returns an isolated FastAPI application. Tests and future
+approved composition may inject a unit-of-work factory explicitly. The
+module-level `app` remains the ASGI entry point used by Uvicorn and CI.
 
 ## Layers
 
@@ -29,10 +30,12 @@ typed contract defined in [`api-conventions.md`](api-conventions.md).
 
 ### Application — `app/application`
 
-Owns use-case orchestration and the storage capabilities those use cases require.
-The current `MockResourceService` coordinates storage reads and writes around the
-framework-independent resource rules. Future use cases belong here when a route
-needs behavior beyond direct delivery.
+Owns use-case orchestration and the persistence capabilities those use cases
+require. The current `MockResourceService` coordinates repository reads and
+writes inside an application-facing unit of work around the framework-independent
+resource rules. Future use cases belong here when a route needs behavior beyond
+direct delivery. Application services depend on contracts, never concrete
+infrastructure.
 
 ### Domain — `app/domain`
 
@@ -43,9 +46,11 @@ Redis, or infrastructure.
 
 ### Infrastructure — `app/infrastructure`
 
-Owns concrete integrations selected during composition. The current integration
-is the in-memory resource store and local demo seed data. Future approved external
-integrations belong here, but their introduction requires a separate milestone.
+Owns concrete integrations selected during composition. The default integration
+is the in-memory repository, unit of work, and local demo seed data. This layer
+also owns the SQLAlchemy engine/session foundation and controlled PostgreSQL
+connectivity probe; neither is selected or connected automatically. See
+[`data-access.md`](data-access.md) for lifecycle and transaction rules.
 
 ### Core and configuration — `app/core` and `app/config.py`
 
@@ -58,19 +63,21 @@ location.
 
 ```text
 API → application → domain
-              ↑
-     infrastructure adapter
+          ↓ contracts
+     repository / unit of work
+          ↑
+     infrastructure adapters
 
 main composition → API + application + infrastructure + core/configuration
 ```
 
 - Domain depends only on Python-level concepts.
-- Application depends on domain and defines capabilities needed by current use
-  cases.
+- Application depends on domain and defines repository/unit-of-work capabilities
+  needed by current use cases.
 - Infrastructure satisfies those capabilities without being imported by domain.
 - API depends on FastAPI plus application/domain contracts.
 - Only composition connects configuration, framework setup, and infrastructure.
 
-These boundaries describe the local mock service, not a final production API or
-database design. Add no speculative repository, service, or base-class hierarchy
-until an approved feature has a concrete responsibility for it.
+These boundaries describe the local mock service and data-access lifecycle, not
+a final production API or database design. Product models, schema standards, and
+migrations remain deferred to their approved roadmap milestones.
