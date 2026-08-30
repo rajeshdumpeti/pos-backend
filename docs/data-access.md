@@ -124,9 +124,12 @@ credential. An optional live check is an explicit manual verification only.
 
 ## Deferred work
 
-Milestone 09 owns durable relational-platform standards, naming, integrity,
-indexing, final transaction governance, operational ownership, and product
-database design. Milestone 10 owns Alembic, migrations, schema-version rules,
-and upgrade/downgrade verification. This foundation intentionally adds no ORM
-product model, metadata, table, schema, migration, seed migration, or database
-creation behavior.
+Milestone 09A now defines the policy for identifiers, naming, relational types,
+integrity, indexing, ownership, sensitive columns, concurrency, and migration
+compatibility in [`relational-standards.md`](relational-standards.md). It adds no
+runtime schema machinery. Milestone 10A owns central SQLAlchemy metadata,
+Alembic, migrations, schema-version rules, and upgrade/downgrade or compensating
+verification. Milestone 07-02 will apply both foundations to authentication
+persistence. This data-access foundation intentionally adds no ORM product
+model, metadata, table, schema, migration, seed migration, or database creation
+behavior.
