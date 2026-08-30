@@ -147,4 +147,9 @@ dependency direction, and placement rules for future approved work. Shared HTTP
 contracts, errors, request IDs, lifecycle, and pagination policy are defined in
 [API conventions](docs/api-conventions.md). Engine, session, transaction,
 connectivity, and persistence-error ownership are defined in
-[data access](docs/data-access.md).
+[data access](docs/data-access.md). Canonical PostgreSQL schema policy,
+including identifiers, naming, types, constraints, indexing, ownership,
+sensitive columns, and migration compatibility, is defined in
+[relational standards](docs/relational-standards.md). Milestone 09A establishes
+policy only; Milestone 10A will encode metadata and Alembic conventions, and
+Milestone 07-02 will apply them to authentication persistence.

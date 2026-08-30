@@ -79,5 +79,9 @@ main composition → API + application + infrastructure + core/configuration
 - Only composition connects configuration, framework setup, and infrastructure.
 
 These boundaries describe the local mock service and data-access lifecycle, not
-a final production API or database design. Product models, schema standards, and
-migrations remain deferred to their approved roadmap milestones.
+a final production API or database design. The canonical policy for future
+PostgreSQL models, constraints, indexes, ownership, and sensitive columns is in
+[`relational-standards.md`](relational-standards.md). Milestone 09A defines that
+policy without changing runtime behavior. Milestone 10A will establish central
+SQLAlchemy metadata and Alembic; Milestone 07-02 will apply the standards to
+authentication persistence.
