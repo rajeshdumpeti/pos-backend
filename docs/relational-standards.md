@@ -5,8 +5,8 @@ defines the minimum PostgreSQL and SQLAlchemy schema conventions established by
 Milestone 09A. It does not create a schema, SQLAlchemy model, metadata object,
 database connection, or migration.
 
-Milestone 10A will encode the approved naming convention in central SQLAlchemy
-metadata, configure Alembic, and establish migration validation. Milestone 07-02
+Milestone 10A encodes the approved naming convention in central SQLAlchemy
+metadata, configures Alembic, and establishes migration validation. Milestone 07-02
 will apply these standards to authentication persistence. Later product-domain
 schemas must follow the same rules and their own approved domain specifications.
 
@@ -94,7 +94,7 @@ Use explicit deterministic names:
   incidental name.
 - A constraint purpose describes the business invariant, not an expression
   fragment such as `check_1`.
-- PostgreSQL identifiers are limited to 63 bytes. Milestone 10A must encode a
+- PostgreSQL identifiers are limited to 63 bytes. Milestone 10A encodes a
   deterministic shortening rule. The approved rule is to retain a meaningful
   prefix and append `__` plus the first 10 lowercase hexadecimal characters of
   the SHA-256 digest of the full canonical name. The unshortened name remains in

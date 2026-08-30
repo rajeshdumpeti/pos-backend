@@ -151,5 +151,10 @@ connectivity, and persistence-error ownership are defined in
 including identifiers, naming, types, constraints, indexing, ownership,
 sensitive columns, and migration compatibility, is defined in
 [relational standards](docs/relational-standards.md). Milestone 09A establishes
-policy only; Milestone 10A will encode metadata and Alembic conventions, and
+policy only; Milestone 10A encodes metadata and Alembic conventions, and
 Milestone 07-02 will apply them to authentication persistence.
+
+The implemented migration structure, offline validation commands, review rules,
+and live-database safety gate are documented in
+[migrations](docs/migrations.md). The baseline is intentionally empty, and
+ordinary local startup and CI still require no PostgreSQL service.

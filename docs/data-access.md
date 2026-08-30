@@ -133,3 +133,8 @@ verification. Milestone 07-02 will apply both foundations to authentication
 persistence. This data-access foundation intentionally adds no ORM product
 model, metadata, table, schema, migration, seed migration, or database creation
 behavior.
+
+Milestone 10A's central metadata and empty Alembic baseline are documented in
+[`migrations.md`](migrations.md). They do not select the database adapter or
+change the engine, session, transaction, connectivity, or local-mock behavior
+defined here.
