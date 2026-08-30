@@ -12,11 +12,14 @@ from app.infrastructure.in_memory_resources import (
     InMemoryResourceUnitOfWork,
     InMemoryResourceUnitOfWorkFactory,
 )
+from app.infrastructure.relational import RELATIONAL_METADATA, RelationalBase
 
 __all__ = [
     "InMemoryResourceStore",
     "InMemoryResourceUnitOfWork",
     "InMemoryResourceUnitOfWorkFactory",
+    "RELATIONAL_METADATA",
+    "RelationalBase",
     "SqlAlchemyUnitOfWork",
     "check_database_connectivity",
     "create_database_engine",
