@@ -13,6 +13,7 @@ from app.infrastructure.in_memory_resources import (
     InMemoryResourceUnitOfWorkFactory,
 )
 from app.infrastructure.relational import RELATIONAL_METADATA, RelationalBase
+from app.infrastructure.authentication import SqlAlchemyAuthenticationUnitOfWork
 
 __all__ = [
     "InMemoryResourceStore",
@@ -21,6 +22,7 @@ __all__ = [
     "RELATIONAL_METADATA",
     "RelationalBase",
     "SqlAlchemyUnitOfWork",
+    "SqlAlchemyAuthenticationUnitOfWork",
     "check_database_connectivity",
     "create_database_engine",
     "create_session_factory",

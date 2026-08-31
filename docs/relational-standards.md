@@ -7,7 +7,8 @@ database connection, or migration.
 
 Milestone 10A encodes the approved naming convention in central SQLAlchemy
 metadata, configures Alembic, and establishes migration validation. Milestone 07-02
-will apply these standards to authentication persistence. Later product-domain
+applies these standards in
+[`authentication-persistence.md`](authentication-persistence.md). Later product-domain
 schemas must follow the same rules and their own approved domain specifications.
 
 ## Scope and authority

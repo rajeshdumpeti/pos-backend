@@ -70,9 +70,20 @@ def test_metadata_import_does_not_construct_an_engine():
     assert result.returncode == 0, result.stderr
 
 
-def test_declarative_base_uses_empty_canonical_metadata():
+def test_declarative_base_uses_canonical_authentication_metadata():
     assert RelationalBase.metadata is RELATIONAL_METADATA
-    assert RELATIONAL_METADATA.tables == {}
+    assert set(RELATIONAL_METADATA.tables) == {
+        "authentication_attempt_states",
+        "authentication_email_outbox",
+        "email_identities",
+        "email_verification_challenges",
+        "external_provider_identities",
+        "password_reset_challenges",
+        "refresh_rotation_retry_receipts",
+        "refresh_sessions",
+        "security_events",
+        "user_accounts",
+    }
 
 
 def test_naming_convention_matches_relational_standards():
@@ -130,7 +141,7 @@ def test_alembic_configuration_and_single_baseline_head_load():
     script = ScriptDirectory.from_config(config)
 
     assert Path(script.dir).resolve() == (ROOT / "migrations").resolve()
-    assert script.get_heads() == ["0001_migration_foundation"]
+    assert script.get_heads() == ["0002_auth_persistence"]
     revision = script.get_revision("0001_migration_foundation")
     assert revision is not None
     assert revision.down_revision is None
@@ -167,14 +178,11 @@ def test_offline_upgrade_and_downgrade_generate_without_engine():
         side_effect=AssertionError("offline migration attempted engine construction"),
     ):
         command.upgrade(_config(upgrade_output), "head", sql=True)
-        command.downgrade(
-            _config(downgrade_output),
-            "0001_migration_foundation:base",
-            sql=True,
-        )
+        command.downgrade(_config(downgrade_output), "head:base", sql=True)
 
     assert "0001_migration_foundation" in upgrade_output.getvalue()
     assert "0001_migration_foundation" in downgrade_output.getvalue()
+    assert "0002_auth_persistence" in upgrade_output.getvalue()
 
 
 def test_online_configuration_requires_database_url_without_exposing_values():

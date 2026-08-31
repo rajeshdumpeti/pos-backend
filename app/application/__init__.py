@@ -8,6 +8,7 @@ from app.application.persistence import (
     ResourceUnitOfWorkFactory,
 )
 from app.application.resources import MockResourceService
+from app.application.authentication_persistence import AuthenticationUnitOfWork
 
 __all__ = [
     "MockResourceService",
@@ -16,4 +17,5 @@ __all__ = [
     "ResourceRepository",
     "ResourceUnitOfWork",
     "ResourceUnitOfWorkFactory",
+    "AuthenticationUnitOfWork",
 ]
