@@ -21,11 +21,14 @@ approved persistence milestone introduces its models.
 
 ## Baseline and single-head policy
 
-`0001_migration_foundation` is the sole baseline and has no parent. Its upgrade
+`0001_migration_foundation` is the baseline and has no parent. Its upgrade
 and downgrade are explicit no-ops. It represents the point before authentication
 or product tables exist.
 
-The normal revision graph has exactly one head. A multiple-head result blocks
+Revision `0002_auth_persistence` adds the authentication persistence schema;
+its scope is documented in
+[`authentication-persistence.md`](authentication-persistence.md). The normal
+revision graph has exactly one head. A multiple-head result blocks
 review unless a deliberate branch/merge migration has prior architecture
 approval. Do not edit a revision that has been applied outside an isolated local
 environment; create a new corrective revision.
@@ -107,9 +110,9 @@ are never required for ordinary CI.
   policy in [`relational-standards.md`](relational-standards.md).
 - Milestone 10A encodes metadata and migration mechanics and supplies the empty
   baseline.
-- Milestone 07-02 will introduce authentication persistence and its first
-  product schema migration after database-password rotation and authorized live
-  local validation.
+- Milestone 07-02 introduces authentication persistence through reviewed
+  revision `0002_auth_persistence` after authorized live local validation.
 
-This foundation does not create authentication tables, product tables, seed
-data, runtime adapter selection, or API behavior.
+The baseline creates no product schema. Revision `0002_auth_persistence` creates
+authentication persistence only; it adds no seed data, runtime adapter
+selection, or API behavior.

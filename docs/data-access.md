@@ -106,7 +106,9 @@ Infrastructure translates SQLAlchemy and driver failures into the
 framework-independent `PersistenceUnavailableError` and uses fixed, secret-safe
 messages. SQL statements, driver text, hosts, usernames, passwords, and engine
 URLs must not cross into application contracts, HTTP responses, OpenAPI, logs,
-or snapshots. Unexpected persistence failures continue through the existing
+snapshots, migration output, or pytest failure output. The original driver
+exception remains privately attached while the public exception chain contains
+only a redacted cause. Unexpected persistence failures continue through the existing
 typed API 500 contract and retain the request ID.
 
 Engine string representations must keep passwords masked. SQLAlchemy is created
@@ -129,10 +131,10 @@ integrity, indexing, ownership, sensitive columns, concurrency, and migration
 compatibility in [`relational-standards.md`](relational-standards.md). It adds no
 runtime schema machinery. Milestone 10A owns central SQLAlchemy metadata,
 Alembic, migrations, schema-version rules, and upgrade/downgrade or compensating
-verification. Milestone 07-02 will apply both foundations to authentication
-persistence. This data-access foundation intentionally adds no ORM product
-model, metadata, table, schema, migration, seed migration, or database creation
-behavior.
+verification. Milestone 07-02 applies both foundations through feature-specific
+authentication ports and an authentication Unit of Work; see
+[`authentication-persistence.md`](authentication-persistence.md). The original
+mock-resource contracts and default in-memory composition remain unchanged.
 
 Milestone 10A's central metadata and empty Alembic baseline are documented in
 [`migrations.md`](migrations.md). They do not select the database adapter or

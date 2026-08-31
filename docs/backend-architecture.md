@@ -83,7 +83,7 @@ a final production API or database design. The canonical policy for future
 PostgreSQL models, constraints, indexes, ownership, and sensitive columns is in
 [`relational-standards.md`](relational-standards.md). Milestone 09A defines that
 policy without changing runtime behavior. Milestone 10A establishes central
-SQLAlchemy metadata and Alembic; Milestone 07-02 will apply the standards to
-authentication persistence. The resulting metadata ownership, migration graph,
+SQLAlchemy metadata and Alembic; Milestone 07-02 applies the standards through
+[`authentication-persistence.md`](authentication-persistence.md). The resulting metadata ownership, migration graph,
 and offline validation workflow are defined in
 [`migrations.md`](migrations.md).

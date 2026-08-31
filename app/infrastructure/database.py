@@ -14,6 +14,7 @@ from app.application import (
     PersistenceUnavailableError,
     ResourceRepository,
 )
+from app.infrastructure.database_diagnostics import raise_safe_database_error
 
 
 SessionFactory = Callable[[], Session]
@@ -24,10 +25,12 @@ def create_database_engine(database_url: SecretStr) -> Engine:
     """Build a synchronous PostgreSQL engine without opening a connection."""
     try:
         url = make_url(database_url.get_secret_value())
-    except ArgumentError:
-        raise PersistenceConfigurationError(
-            "Database engine configuration is invalid"
-        ) from None
+    except ArgumentError as error:
+        raise_safe_database_error(
+            PersistenceConfigurationError,
+            "Database engine configuration is invalid",
+            error,
+        )
 
     if url.drivername == "postgresql":
         url = url.set(drivername="postgresql+psycopg")
@@ -42,20 +45,24 @@ def create_database_engine(database_url: SecretStr) -> Engine:
             hide_parameters=True,
             pool_pre_ping=True,
         )
-    except (ArgumentError, SQLAlchemyError):
-        raise PersistenceConfigurationError(
-            "Database engine configuration is invalid"
-        ) from None
+    except (ArgumentError, SQLAlchemyError) as error:
+        raise_safe_database_error(
+            PersistenceConfigurationError,
+            "Database engine configuration is invalid",
+            error,
+        )
 
 
 def dispose_database_engine(engine: Engine) -> None:
     """Release all pooled connections owned by an engine."""
     try:
         engine.dispose()
-    except SQLAlchemyError:
-        raise PersistenceUnavailableError(
-            "Database engine disposal failed"
-        ) from None
+    except SQLAlchemyError as error:
+        raise_safe_database_error(
+            PersistenceUnavailableError,
+            "Database engine disposal failed",
+            error,
+        )
 
 
 def create_session_factory(engine: Engine) -> sessionmaker[Session]:
@@ -72,10 +79,12 @@ def check_database_connectivity(engine: Engine) -> None:
     try:
         with engine.connect() as connection:
             result = connection.execute(text("SELECT 1")).scalar_one()
-    except SQLAlchemyError:
-        raise PersistenceUnavailableError(
-            "Database connectivity check failed"
-        ) from None
+    except SQLAlchemyError as error:
+        raise_safe_database_error(
+            PersistenceUnavailableError,
+            "Database connectivity check failed",
+            error,
+        )
 
     if result != 1:
         raise PersistenceUnavailableError("Database connectivity check failed")
@@ -107,11 +116,13 @@ class SqlAlchemyUnitOfWork:
         try:
             self._session = self._session_factory()
             self._repository = self._repository_factory(self._session)
-        except SQLAlchemyError:
+        except SQLAlchemyError as error:
             self._close_after_failed_entry()
-            raise PersistenceUnavailableError(
-                "Database session could not be started"
-            ) from None
+            raise_safe_database_error(
+                PersistenceUnavailableError,
+                "Database session could not be started",
+                error,
+            )
         except BaseException:
             self._close_after_failed_entry()
             raise
@@ -125,44 +136,54 @@ class SqlAlchemyUnitOfWork:
         _traceback: TracebackType | None,
     ) -> None:
         session = self._require_session()
-        cleanup_failed = False
+        cleanup_error: SQLAlchemyError | None = None
 
         try:
             if exception is not None:
                 session.rollback()
-        except SQLAlchemyError:
-            cleanup_failed = True
+        except SQLAlchemyError as error:
+            cleanup_error = error
         finally:
             try:
                 session.close()
-            except SQLAlchemyError:
-                cleanup_failed = True
+            except SQLAlchemyError as error:
+                cleanup_error = error
             self._session = None
             self._repository = None
 
-        if cleanup_failed or (
-            exception_type is not None
-            and issubclass(exception_type, SQLAlchemyError)
-        ):
-            raise PersistenceUnavailableError(
-                "Database operation could not be completed"
-            ) from None
+        if cleanup_error is not None:
+            raise_safe_database_error(
+                PersistenceUnavailableError,
+                "Database operation could not be completed",
+                cleanup_error,
+            )
+        if exception_type is not None and issubclass(exception_type, SQLAlchemyError):
+            assert exception is not None
+            raise_safe_database_error(
+                PersistenceUnavailableError,
+                "Database operation could not be completed",
+                exception,
+            )
 
     def commit(self) -> None:
         try:
             self._require_session().commit()
-        except SQLAlchemyError:
-            raise PersistenceUnavailableError(
-                "Database operation could not be completed"
-            ) from None
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                PersistenceUnavailableError,
+                "Database operation could not be completed",
+                error,
+            )
 
     def rollback(self) -> None:
         try:
             self._require_session().rollback()
-        except SQLAlchemyError:
-            raise PersistenceUnavailableError(
-                "Database operation could not be completed"
-            ) from None
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                PersistenceUnavailableError,
+                "Database operation could not be completed",
+                error,
+            )
 
     def _require_session(self) -> Session:
         if self._session is None:

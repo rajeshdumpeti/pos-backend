@@ -3,12 +3,15 @@
 from logging.config import fileConfig
 
 from alembic import context
+from sqlalchemy.exc import SQLAlchemyError
 
+from app.application import PersistenceUnavailableError
 from app.config import load_settings
 from app.infrastructure.database import (
     create_database_engine,
     dispose_database_engine,
 )
+from app.infrastructure.database_diagnostics import raise_safe_database_error
 from migrations.metadata import target_metadata
 from migrations.runtime import require_database_url
 
@@ -50,6 +53,12 @@ def run_migrations_online() -> None:
             context.configure(connection=connection, **_common_configuration())
             with context.begin_transaction():
                 context.run_migrations()
+    except SQLAlchemyError as error:
+        raise_safe_database_error(
+            PersistenceUnavailableError,
+            "Database migration failed",
+            error,
+        )
     finally:
         dispose_database_engine(engine)
 
