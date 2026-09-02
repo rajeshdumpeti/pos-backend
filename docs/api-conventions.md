@@ -14,6 +14,10 @@ support mobile UI development but do not define the final production API.
 | `PATCH` | `/{resource}/{item_id}` | `200` | Updated item object | `400`, `404`, `422`, `500` | Mock resources | `update_mock_resource_item` |
 | `DELETE` | `/{resource}/{item_id}` | `204` | No body | `400`, `422`, `500` | Mock resources | `delete_mock_resource_item` |
 | `POST` | `/demo/reset` | `200` | `ResetResponse` | `500` | Demo | `reset_mock_demo` |
+| `POST` | `/api/v1/auth/registrations` | `202` | `PendingVerificationResponse` | `400`, `422`, `429`, `500`, `503` | Authentication | `create_email_registration` |
+| `POST` | `/api/v1/auth/email-verifications/confirm` | `201` | `EmailVerifiedResponse` | `400`, `409`, `410`, `422`, `429`, `500`, `503` | Authentication | `confirm_email_verification` |
+| `POST` | `/api/v1/auth/email-verifications/resend` | `202` | `PendingVerificationResponse` | `400`, `410`, `422`, `429`, `500`, `503` | Authentication | `resend_email_verification` |
+| `PATCH` | `/api/v1/auth/email-verifications/email` | `202` | `PendingVerificationResponse` | `400`, `410`, `422`, `429`, `500`, `503` | Authentication | `change_unverified_email` |
 
 `/docs` and `/openapi.json` remain local framework endpoints. The dynamic mock
 routes intentionally retain their existing unversioned paths and fixture shapes.
@@ -79,6 +83,16 @@ Current stable codes are:
 | `method_not_allowed` | `405` | The path does not support the method |
 | `http_error` | Varies | Another approved HTTP-layer failure |
 | `internal_server_error` | `500` | An unexpected implementation failure |
+| `password_rejected` | `400` | Password policy or compromised-password check rejected input |
+| `verification_flow_invalid` | `400` | Flow is invalid, superseded, or consumed |
+| `verification_flow_expired` | `410` | Registration/verification flow expired |
+| `verification_code_invalid` | `400` | Six-digit code did not verify |
+| `verification_code_expired` | `410` | Issued code expired while the flow remains usable |
+| `verification_attempts_exceeded` | `429` | Five attempts were consumed |
+| `resend_cooldown_active` | `429` | Backend resend cooldown remains active |
+| `account_already_exists` | `409` | Mailbox ownership proved for an existing account |
+| `rate_limited` | `429` | Reserved for a separately approved general rate limit |
+| `dependency_unavailable` | `503` | Required persistence/cryptographic dependency is unavailable |
 
 Domain errors remain framework-independent. The API boundary maps them to
 status codes and error codes. Validation details contain only `field`, `code`,
@@ -114,11 +128,11 @@ release. Deprecated behavior remains available until every supported client has
 migrated; no fixed deprecation clock is claimed before production support policy
 exists.
 
-The API remains unversioned during the local mock phase. Introduce a versioned
-namespace such as `/api/v1` before the first production-backed contract or before
-multiple released client generations require compatibility. Do not create a
-duplicate version tree before that trigger. Every contract change requires an
-OpenAPI diff review.
+The generic local mock API remains unversioned. The first production-backed
+authentication contract uses `/api/v1/auth`; future stable authentication
+changes must preserve it or follow an explicit coordinated migration. Do not
+duplicate the version tree. Every contract change requires an OpenAPI diff
+review.
 
 ## Pagination policy
 

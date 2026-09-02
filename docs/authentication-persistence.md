@@ -1,8 +1,9 @@
 # POS authentication persistence
 
-This is the canonical guide for Milestone 07-02. It defines persistence only:
-there are no public authentication routes, password/token generation, provider
-verification, email delivery, or frontend integration in this slice.
+This is the canonical persistence guide established by Milestone 07-02.
+Milestone 07-03 now uses these boundaries for public email registration and
+verification; its behavior is documented in
+[`email-registration-verification.md`](email-registration-verification.md).
 
 ## Ownership and dependency direction
 
@@ -64,6 +65,10 @@ ID fits Alembic's standard 32-character version column; the filename/message
 retain the full milestone name. Upgrade and reverse-order downgrade are explicit
 and contain no seed data.
 
+Revision `0003_registration_flow` adds flow expiry, digest key ID/version,
+completion action, lifecycle checks, and a deferred supersession self-reference.
+It changes no table inventory and seeds no account or authentication data.
+
 After proving the configured target is the authorized local `pos_local`
 database for `pos_app_local`, load local values without printing them and run:
 
@@ -71,7 +76,7 @@ database for `pos_app_local`, load local values without printing them and run:
 .venv/bin/alembic current
 .venv/bin/alembic upgrade head
 .venv/bin/python -m pytest tests/test_authentication_postgresql.py -q
-.venv/bin/alembic downgrade 0001_migration_foundation
+.venv/bin/alembic downgrade 0002_auth_persistence
 .venv/bin/alembic upgrade head
 ```
 
@@ -113,7 +118,8 @@ adding a vendor in this milestone.
 ## Deferred behavior
 
 Final cleanup/retention periods and bounded cleanup jobs remain required before
-production. Later authentication slices own email normalization, Argon2id,
-secret generation, rotation/replay behavior, provider verification/linking,
-rate-limit orchestration, encryption/key management, email workers, public APIs,
-authorization, and mobile integration.
+production. Milestone 07-03 owns email normalization, Argon2id registration
+hashing, verification material, encrypted registration email payloads, and the
+four versioned endpoints. Later slices still own sessions/sign-in, provider
+verification/linking, general rate limits, production key management and email
+workers, authorization, and authenticated mobile routing.

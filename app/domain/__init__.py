@@ -10,7 +10,12 @@ from app.domain.resources import (
     delete_resource_item,
     update_resource_item,
 )
-from app.domain.authentication import AccountStatus, InvalidAccountTransitionError, require_account_transition
+from app.domain.authentication import (
+    AccountStatus,
+    ChallengeCompletionAction,
+    InvalidAccountTransitionError,
+    require_account_transition,
+)
 
 __all__ = [
     "ItemNotFoundError",
@@ -20,6 +25,7 @@ __all__ = [
     "delete_resource_item",
     "update_resource_item",
     "AccountStatus",
+    "ChallengeCompletionAction",
     "InvalidAccountTransitionError",
     "require_account_transition",
 ]

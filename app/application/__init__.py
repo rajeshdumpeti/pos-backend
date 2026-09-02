@@ -9,6 +9,7 @@ from app.application.persistence import (
 )
 from app.application.resources import MockResourceService
 from app.application.authentication_persistence import AuthenticationUnitOfWork
+from app.application.email_registration import EmailRegistrationService
 
 __all__ = [
     "MockResourceService",
@@ -18,4 +19,5 @@ __all__ = [
     "ResourceUnitOfWork",
     "ResourceUnitOfWorkFactory",
     "AuthenticationUnitOfWork",
+    "EmailRegistrationService",
 ]
