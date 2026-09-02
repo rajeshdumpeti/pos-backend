@@ -1,6 +1,8 @@
 """Central, secret-safe runtime configuration for POS Backend."""
 
 from collections.abc import Mapping
+import base64
+import binascii
 from enum import StrEnum
 import os
 from typing import Self
@@ -31,6 +33,22 @@ class Settings(BaseModel):
     redis_url: SecretStr | None = Field(default=None, repr=False)
     jwt_secret: SecretStr | None = Field(default=None, repr=False)
     cors_origins: tuple[str, ...]
+    verification_code_lifetime_seconds: int = 600
+    verification_max_attempts: int = 5
+    verification_resend_cooldown_seconds: int = 60
+    verification_flow_lifetime_seconds: int = 1800
+    argon2_time_cost: int = 3
+    argon2_memory_cost_kib: int = 65536
+    argon2_parallelism: int = 4
+    auth_challenge_digest_key: SecretStr | None = Field(default=None, repr=False)
+    auth_challenge_digest_key_id: str = "auth-challenge"
+    auth_challenge_digest_key_version: int = 1
+    auth_outbox_encryption_key: SecretStr | None = Field(default=None, repr=False)
+    auth_outbox_encryption_key_id: str = "auth-email"
+    auth_outbox_encryption_key_version: int = 1
+    current_terms_version: str | None = None
+    current_privacy_version: str | None = None
+    local_email_inspection_enabled: bool = False
 
     @model_validator(mode="after")
     def validate_configuration(self) -> Self:
@@ -49,6 +67,7 @@ class Settings(BaseModel):
         if self.jwt_secret is not None:
             _validate_jwt_secret(self.jwt_secret.get_secret_value())
         _validate_cors_origins(self.cors_origins, self.app_env)
+        _validate_authentication_settings(self)
         return self
 
 
@@ -108,10 +127,125 @@ def _parse_jwt_secret(environ: Mapping[str, str]) -> SecretStr | None:
     return SecretStr(value)
 
 
+def _parse_int(
+    environ: Mapping[str, str], name: str, default: int, *, minimum: int = 1
+) -> int:
+    raw_value = _optional_value(environ, name)
+    if raw_value is None:
+        return default
+    try:
+        value = int(raw_value)
+    except ValueError:
+        raise ConfigurationError(f"{name} must be an integer") from None
+    if value < minimum:
+        raise ConfigurationError(f"{name} must be at least {minimum}")
+    return value
+
+
+def _parse_bool(environ: Mapping[str, str], name: str, default: bool) -> bool:
+    raw_value = _optional_value(environ, name)
+    if raw_value is None:
+        return default
+    normalized = raw_value.lower()
+    if normalized in {"1", "true", "yes", "on"}:
+        return True
+    if normalized in {"0", "false", "no", "off"}:
+        return False
+    raise ConfigurationError(f"{name} must be true or false")
+
+
+def _parse_auth_secret(environ: Mapping[str, str], name: str) -> SecretStr | None:
+    value = _optional_value(environ, name)
+    if value is None:
+        return None
+    _decode_256_bit_key(value, name)
+    return SecretStr(value)
+
+
+def _decode_256_bit_key(value: str, name: str) -> bytes:
+    try:
+        padding = "=" * (-len(value) % 4)
+        decoded = base64.urlsafe_b64decode(value + padding)
+    except (ValueError, binascii.Error):
+        raise ConfigurationError(
+            f"{name} must be a URL-safe base64 encoded 256-bit key"
+        ) from None
+    if len(decoded) != 32:
+        raise ConfigurationError(
+            f"{name} must be a URL-safe base64 encoded 256-bit key"
+        )
+    return decoded
+
+
+def decode_authentication_key(value: SecretStr, name: str) -> bytes:
+    """Decode one validated key without exposing it outside composition."""
+    return _decode_256_bit_key(value.get_secret_value(), name)
+
+
 def _validate_jwt_secret(value: str) -> None:
     if len(value) < 32:
         raise ConfigurationError(
             "JWT_SECRET must contain at least 32 characters when configured"
+        )
+
+
+def _validate_authentication_settings(settings: Settings) -> None:
+    if settings.verification_flow_lifetime_seconds < settings.verification_code_lifetime_seconds:
+        raise ConfigurationError(
+            "AUTH_VERIFICATION_FLOW_LIFETIME_SECONDS must be at least "
+            "AUTH_VERIFICATION_CODE_LIFETIME_SECONDS"
+        )
+    if settings.verification_max_attempts != 5:
+        raise ConfigurationError("AUTH_VERIFICATION_MAX_ATTEMPTS must be 5")
+    if settings.verification_resend_cooldown_seconds != 60:
+        raise ConfigurationError("AUTH_RESEND_COOLDOWN_SECONDS must be 60")
+    if settings.verification_code_lifetime_seconds != 600:
+        raise ConfigurationError("AUTH_VERIFICATION_CODE_LIFETIME_SECONDS must be 600")
+    if settings.argon2_memory_cost_kib < 19456:
+        raise ConfigurationError("AUTH_ARGON2_MEMORY_COST_KIB must be at least 19456")
+    if settings.argon2_time_cost < 2:
+        raise ConfigurationError("AUTH_ARGON2_TIME_COST must be at least 2")
+    for name, value in (
+        ("AUTH_CHALLENGE_DIGEST_KEY", settings.auth_challenge_digest_key),
+        ("AUTH_OUTBOX_ENCRYPTION_KEY", settings.auth_outbox_encryption_key),
+    ):
+        if value is not None:
+            _decode_256_bit_key(value.get_secret_value(), name)
+    for name, value in (
+        ("AUTH_CHALLENGE_DIGEST_KEY_ID", settings.auth_challenge_digest_key_id),
+        ("AUTH_OUTBOX_ENCRYPTION_KEY_ID", settings.auth_outbox_encryption_key_id),
+    ):
+        if not value or len(value) > 64:
+            raise ConfigurationError(f"{name} must contain 1 to 64 characters")
+    for name, value in (
+        ("CURRENT_TERMS_VERSION", settings.current_terms_version),
+        ("CURRENT_PRIVACY_VERSION", settings.current_privacy_version),
+    ):
+        if value is not None and (not value.strip() or len(value) > 64):
+            raise ConfigurationError(f"{name} must contain 1 to 64 characters")
+    if settings.app_env in _PROTECTED_ENVIRONMENTS:
+        missing = [
+            name
+            for name, value in (
+                ("DATABASE_URL", settings.database_url),
+                ("AUTH_CHALLENGE_DIGEST_KEY", settings.auth_challenge_digest_key),
+                ("AUTH_OUTBOX_ENCRYPTION_KEY", settings.auth_outbox_encryption_key),
+                ("CURRENT_TERMS_VERSION", settings.current_terms_version),
+                ("CURRENT_PRIVACY_VERSION", settings.current_privacy_version),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ConfigurationError(
+                "Protected authentication environments require: "
+                + ", ".join(missing)
+            )
+    if (
+        settings.local_email_inspection_enabled
+        and settings.app_env not in {AppEnvironment.LOCAL, AppEnvironment.DEVELOPMENT}
+    ):
+        raise ConfigurationError(
+            "AUTH_LOCAL_EMAIL_INSPECTION_ENABLED is restricted to local and development"
         )
 
 
@@ -178,4 +312,46 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         redis_url=_parse_secret_url(source, "REDIS_URL", _REDIS_SCHEMES),
         jwt_secret=_parse_jwt_secret(source),
         cors_origins=_parse_cors_origins(source, app_environment),
+        verification_code_lifetime_seconds=_parse_int(
+            source, "AUTH_VERIFICATION_CODE_LIFETIME_SECONDS", 600
+        ),
+        verification_max_attempts=_parse_int(
+            source, "AUTH_VERIFICATION_MAX_ATTEMPTS", 5
+        ),
+        verification_resend_cooldown_seconds=_parse_int(
+            source, "AUTH_RESEND_COOLDOWN_SECONDS", 60
+        ),
+        verification_flow_lifetime_seconds=_parse_int(
+            source, "AUTH_VERIFICATION_FLOW_LIFETIME_SECONDS", 1800
+        ),
+        argon2_time_cost=_parse_int(source, "AUTH_ARGON2_TIME_COST", 3),
+        argon2_memory_cost_kib=_parse_int(
+            source, "AUTH_ARGON2_MEMORY_COST_KIB", 65536
+        ),
+        argon2_parallelism=_parse_int(source, "AUTH_ARGON2_PARALLELISM", 4),
+        auth_challenge_digest_key=_parse_auth_secret(
+            source, "AUTH_CHALLENGE_DIGEST_KEY"
+        ),
+        auth_challenge_digest_key_id=(
+            _optional_value(source, "AUTH_CHALLENGE_DIGEST_KEY_ID")
+            or "auth-challenge"
+        ),
+        auth_challenge_digest_key_version=_parse_int(
+            source, "AUTH_CHALLENGE_DIGEST_KEY_VERSION", 1
+        ),
+        auth_outbox_encryption_key=_parse_auth_secret(
+            source, "AUTH_OUTBOX_ENCRYPTION_KEY"
+        ),
+        auth_outbox_encryption_key_id=(
+            _optional_value(source, "AUTH_OUTBOX_ENCRYPTION_KEY_ID")
+            or "auth-email"
+        ),
+        auth_outbox_encryption_key_version=_parse_int(
+            source, "AUTH_OUTBOX_ENCRYPTION_KEY_VERSION", 1
+        ),
+        current_terms_version=_optional_value(source, "CURRENT_TERMS_VERSION"),
+        current_privacy_version=_optional_value(source, "CURRENT_PRIVACY_VERSION"),
+        local_email_inspection_enabled=_parse_bool(
+            source, "AUTH_LOCAL_EMAIL_INSPECTION_ENABLED", False
+        ),
     )

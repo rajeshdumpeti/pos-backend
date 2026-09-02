@@ -141,7 +141,7 @@ def test_alembic_configuration_and_single_baseline_head_load():
     script = ScriptDirectory.from_config(config)
 
     assert Path(script.dir).resolve() == (ROOT / "migrations").resolve()
-    assert script.get_heads() == ["0002_auth_persistence"]
+    assert script.get_heads() == ["0003_registration_flow"]
     revision = script.get_revision("0001_migration_foundation")
     assert revision is not None
     assert revision.down_revision is None
@@ -183,6 +183,7 @@ def test_offline_upgrade_and_downgrade_generate_without_engine():
     assert "0001_migration_foundation" in upgrade_output.getvalue()
     assert "0001_migration_foundation" in downgrade_output.getvalue()
     assert "0002_auth_persistence" in upgrade_output.getvalue()
+    assert "0003_registration_flow" in upgrade_output.getvalue()
 
 
 def test_online_configuration_requires_database_url_without_exposing_values():

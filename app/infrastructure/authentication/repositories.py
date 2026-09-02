@@ -25,6 +25,7 @@ from app.domain.authentication import (
     AuthenticationAttemptStateRecord,
     AuthenticationEmailOutboxRecord,
     AuthenticationProvider,
+    ChallengeCompletionAction,
     ChallengeId,
     ChallengePurpose,
     EmailIdentityRecord,
@@ -126,6 +127,37 @@ class SqlAlchemyUserAccountRepository:
         model = self._session.get(UserAccountModel, account_id)
         return None if model is None else _account_record(model)
 
+    def get_for_update(self, account_id: AccountId) -> UserAccountRecord | None:
+        model = _execute_one(
+            self._session,
+            select(UserAccountModel)
+            .where(UserAccountModel.id == account_id)
+            .with_for_update(),
+        )
+        return None if model is None else _account_record(model)
+
+    def activate_pending(self, account_id: AccountId, verified_at: datetime) -> bool:
+        try:
+            result = self._session.execute(
+                update(UserAccountModel)
+                .where(
+                    UserAccountModel.id == account_id,
+                    UserAccountModel.status == AccountStatus.PENDING_VERIFICATION.value,
+                )
+                .values(
+                    status=AccountStatus.ACTIVE.value,
+                    email_verified_at=verified_at,
+                    updated_at=verified_at,
+                )
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
+
 
 class SqlAlchemyEmailIdentityRepository:
     def __init__(self, session: Session) -> None:
@@ -143,6 +175,84 @@ class SqlAlchemyEmailIdentityRepository:
             ),
         )
         return None if model is None else _email_record(model)
+
+    def get_by_normalized_email_for_update(
+        self, normalized_email: str
+    ) -> EmailIdentityRecord | None:
+        model = _execute_one(
+            self._session,
+            select(EmailIdentityModel)
+            .where(EmailIdentityModel.normalized_email == normalized_email)
+            .with_for_update(),
+        )
+        return None if model is None else _email_record(model)
+
+    def get_primary_for_account_for_update(
+        self, account_id: AccountId
+    ) -> EmailIdentityRecord | None:
+        model = _execute_one(
+            self._session,
+            select(EmailIdentityModel)
+            .where(
+                EmailIdentityModel.user_account_id == account_id,
+                EmailIdentityModel.is_primary.is_(True),
+            )
+            .with_for_update(),
+        )
+        return None if model is None else _email_record(model)
+
+    def replace_unverified_email(
+        self,
+        identity_id: UUID,
+        display_email: str,
+        normalized_email: str,
+        updated_at: datetime,
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(EmailIdentityModel)
+                .where(
+                    EmailIdentityModel.id == identity_id,
+                    EmailIdentityModel.is_verified.is_(False),
+                )
+                .values(
+                    display_email=display_email,
+                    normalized_email=normalized_email,
+                    updated_at=updated_at,
+                )
+            )
+            _flush(self._session)
+        except IntegrityError as error:
+            _raise_integrity_error(error)
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
+
+    def mark_verified(self, identity_id: UUID, verified_at: datetime) -> bool:
+        try:
+            result = self._session.execute(
+                update(EmailIdentityModel)
+                .where(
+                    EmailIdentityModel.id == identity_id,
+                    EmailIdentityModel.is_verified.is_(False),
+                )
+                .values(
+                    is_verified=True,
+                    verified_at=verified_at,
+                    updated_at=verified_at,
+                )
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
 
 
 class SqlAlchemyExternalProviderIdentityRepository:
@@ -190,6 +300,94 @@ class SqlAlchemyEmailVerificationChallengeRepository:
             .with_for_update(),
         )
         return None if model is None else _verification_record(model)
+
+    def get_current_for_update(
+        self, account_id: AccountId, purpose: ChallengePurpose
+    ) -> EmailVerificationChallengeRecord | None:
+        model = _execute_one(
+            self._session,
+            select(EmailVerificationChallengeModel)
+            .where(
+                EmailVerificationChallengeModel.user_account_id == account_id,
+                EmailVerificationChallengeModel.purpose == purpose.value,
+                EmailVerificationChallengeModel.consumed_at.is_(None),
+                EmailVerificationChallengeModel.superseded_by_id.is_(None),
+            )
+            .with_for_update(),
+        )
+        return None if model is None else _verification_record(model)
+
+    def get_by_flow_digest_for_update(
+        self, flow_token_digest: str
+    ) -> EmailVerificationChallengeRecord | None:
+        model = _execute_one(
+            self._session,
+            select(EmailVerificationChallengeModel)
+            .where(
+                EmailVerificationChallengeModel.flow_token_digest
+                == flow_token_digest
+            )
+            .with_for_update(),
+        )
+        return None if model is None else _verification_record(model)
+
+    def supersede(
+        self,
+        challenge_id: UUID,
+        replacement_id: UUID,
+        expected_status_version: int,
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(EmailVerificationChallengeModel)
+                .where(
+                    EmailVerificationChallengeModel.id == challenge_id,
+                    EmailVerificationChallengeModel.consumed_at.is_(None),
+                    EmailVerificationChallengeModel.superseded_by_id.is_(None),
+                    EmailVerificationChallengeModel.status_version
+                    == expected_status_version,
+                )
+                .values(
+                    superseded_by_id=replacement_id,
+                    status_version=expected_status_version + 1,
+                )
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
+
+    def increment_attempts(
+        self, challenge_id: UUID, expected_status_version: int
+    ) -> int | None:
+        try:
+            attempts = self._session.execute(
+                update(EmailVerificationChallengeModel)
+                .where(
+                    EmailVerificationChallengeModel.id == challenge_id,
+                    EmailVerificationChallengeModel.consumed_at.is_(None),
+                    EmailVerificationChallengeModel.superseded_by_id.is_(None),
+                    EmailVerificationChallengeModel.status_version
+                    == expected_status_version,
+                    EmailVerificationChallengeModel.attempts
+                    < EmailVerificationChallengeModel.max_attempts,
+                )
+                .values(
+                    attempts=EmailVerificationChallengeModel.attempts + 1,
+                    status_version=expected_status_version + 1,
+                )
+                .returning(EmailVerificationChallengeModel.attempts)
+            ).scalar_one_or_none()
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return attempts
 
     def consume(
         self, challenge_id: UUID, consumed_at: datetime, expected_status_version: int
@@ -485,7 +683,7 @@ def _provider_record(model: object) -> ExternalProviderIdentityRecord:
 
 def _verification_record(model: object) -> EmailVerificationChallengeRecord:
     assert isinstance(model, EmailVerificationChallengeModel)
-    return EmailVerificationChallengeRecord(id=ChallengeId(model.id), user_account_id=AccountId(model.user_account_id), purpose=ChallengePurpose(model.purpose), flow_token_digest=model.flow_token_digest, code_digest=model.code_digest, target_normalized_email=model.target_normalized_email, issued_at=model.issued_at, expires_at=model.expires_at, resend_available_at=model.resend_available_at, attempts=model.attempts, max_attempts=model.max_attempts, status_version=model.status_version, consumed_at=model.consumed_at, superseded_by_id=None if model.superseded_by_id is None else ChallengeId(model.superseded_by_id))
+    return EmailVerificationChallengeRecord(id=ChallengeId(model.id), user_account_id=AccountId(model.user_account_id), purpose=ChallengePurpose(model.purpose), flow_token_digest=model.flow_token_digest, code_digest=model.code_digest, target_normalized_email=model.target_normalized_email, issued_at=model.issued_at, expires_at=model.expires_at, flow_expires_at=model.flow_expires_at, resend_available_at=model.resend_available_at, digest_key_id=model.digest_key_id, digest_key_version=model.digest_key_version, completion_action=ChallengeCompletionAction(model.completion_action), attempts=model.attempts, max_attempts=model.max_attempts, status_version=model.status_version, consumed_at=model.consumed_at, superseded_by_id=None if model.superseded_by_id is None else ChallengeId(model.superseded_by_id))
 
 
 def _reset_record(model: object) -> PasswordResetChallengeRecord:

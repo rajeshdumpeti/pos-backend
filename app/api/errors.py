@@ -9,6 +9,21 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.schemas import ErrorDetail, ErrorResponse
+from app.application.email_registration import (
+    AccountAlreadyExistsError,
+    AuthenticationCryptographyError,
+    PasswordRejectedError,
+    RegistrationDependencyUnavailableError,
+    RegistrationInputRejectedError,
+    RegistrationInternalError,
+    RegistrationVerificationError,
+    ResendCooldownActiveError,
+    VerificationAttemptsExceededError,
+    VerificationCodeExpiredError,
+    VerificationCodeInvalidError,
+    VerificationFlowExpiredError,
+    VerificationFlowInvalidError,
+)
 from app.core import REQUEST_ID_HEADER, get_request_id
 from app.domain import (
     ItemNotFoundError,
@@ -21,7 +36,11 @@ _ERROR_DESCRIPTIONS = {
     status.HTTP_400_BAD_REQUEST: "The operation is not supported for this resource.",
     status.HTTP_404_NOT_FOUND: "The requested route, resource, or item was not found.",
     status.HTTP_405_METHOD_NOT_ALLOWED: "The HTTP method is not supported.",
+    status.HTTP_409_CONFLICT: "The request conflicts with existing state.",
+    status.HTTP_410_GONE: "The requested authentication flow has expired.",
+    status.HTTP_429_TOO_MANY_REQUESTS: "The operation is temporarily unavailable.",
     status.HTTP_422_UNPROCESSABLE_ENTITY: "The request could not be validated.",
+    status.HTTP_503_SERVICE_UNAVAILABLE: "A required dependency is unavailable.",
     status.HTTP_500_INTERNAL_SERVER_ERROR: "An unexpected server error occurred.",
 }
 _VALIDATION_MESSAGES = {
@@ -58,6 +77,9 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(ItemNotFoundError, _handle_domain_error)
     application.add_exception_handler(
         ResourceMutationNotAllowedError, _handle_domain_error
+    )
+    application.add_exception_handler(
+        RegistrationVerificationError, _handle_registration_error
     )
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(StarletteHTTPException, _handle_http_error)
@@ -97,6 +119,76 @@ async def _handle_validation_error(
         "request_validation_failed",
         "Request validation failed",
         details,
+    )
+
+
+async def _handle_registration_error(
+    request: Request, error: RegistrationVerificationError
+) -> JSONResponse:
+    if isinstance(error, RegistrationInputRejectedError):
+        return _error_response(
+            request, 422, "request_validation_failed", "Request validation failed"
+        )
+    if isinstance(error, PasswordRejectedError):
+        return _error_response(
+            request, 400, "password_rejected", "Password was rejected"
+        )
+    if isinstance(error, VerificationFlowInvalidError):
+        return _error_response(
+            request, 400, "verification_flow_invalid", "Verification flow is invalid"
+        )
+    if isinstance(error, VerificationFlowExpiredError):
+        return _error_response(
+            request, 410, "verification_flow_expired", "Verification flow expired"
+        )
+    if isinstance(error, VerificationCodeInvalidError):
+        return _error_response(
+            request, 400, "verification_code_invalid", "Verification code is invalid"
+        )
+    if isinstance(error, VerificationCodeExpiredError):
+        return _error_response(
+            request, 410, "verification_code_expired", "Verification code expired"
+        )
+    if isinstance(error, VerificationAttemptsExceededError):
+        return _error_response(
+            request,
+            429,
+            "verification_attempts_exceeded",
+            "Verification attempts were exceeded",
+        )
+    if isinstance(error, ResendCooldownActiveError):
+        return _error_response(
+            request,
+            429,
+            "resend_cooldown_active",
+            "Verification resend cooldown is active",
+            retry_at=error.retry_at.isoformat(),
+            retry_after_seconds=error.retry_after_seconds,
+        )
+    if isinstance(error, AccountAlreadyExistsError):
+        return _error_response(
+            request,
+            409,
+            "account_already_exists",
+            "Account ownership was confirmed",
+            actions=["sign_in", "forgot_password"],
+        )
+    if isinstance(error, RegistrationDependencyUnavailableError):
+        return _error_response(
+            request,
+            503,
+            "dependency_unavailable",
+            "A required dependency is unavailable",
+        )
+    if isinstance(error, (AuthenticationCryptographyError, RegistrationInternalError)):
+        return _error_response(
+            request,
+            500,
+            "internal_server_error",
+            "An unexpected error occurred",
+        )
+    return _error_response(
+        request, 500, "internal_server_error", "An unexpected error occurred"
     )
 
 
@@ -142,6 +234,9 @@ def _error_response(
     message: str,
     details: list[ErrorDetail] | None = None,
     extra_headers: dict[str, str] | None = None,
+    retry_at: str | None = None,
+    retry_after_seconds: int | None = None,
+    actions: list[str] | None = None,
 ) -> JSONResponse:
     request_id = get_request_id(request)
     headers = dict(extra_headers or {})
@@ -152,9 +247,17 @@ def _error_response(
         request_id=request_id,
         details=details or [],
     )
+    content: dict[str, Any] = body.model_dump()
+    if retry_at is not None:
+        content["retry_at"] = retry_at
+    if retry_after_seconds is not None:
+        content["retry_after_seconds"] = retry_after_seconds
+        headers["Retry-After"] = str(retry_after_seconds)
+    if actions:
+        content["actions"] = actions
     return JSONResponse(
         status_code=status_code,
-        content=body.model_dump(),
+        content=content,
         headers=headers,
     )
 

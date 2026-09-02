@@ -4,17 +4,24 @@ from fastapi import FastAPI
 
 from app.api import create_api_router, register_exception_handlers
 from app.application import MockResourceService, ResourceUnitOfWorkFactory
+from app.application.email_registration import EmailRegistrationService
 from app.config import Settings, load_settings
 from app.core import configure_cors, configure_request_ids
 from app.infrastructure import (
     InMemoryResourceStore,
     InMemoryResourceUnitOfWorkFactory,
 )
+from app.infrastructure.authentication.composition import compose_email_registration
+from app.infrastructure.authentication.registration import (
+    SafeAuthenticationAvailabilityDiagnostic,
+)
+from app.infrastructure.database import dispose_database_engine
 
 
 def create_app(
     app_settings: Settings | None = None,
     resource_unit_of_work_factory: ResourceUnitOfWorkFactory | None = None,
+    email_registration_service: EmailRegistrationService | None = None,
 ) -> FastAPI:
     """Compose one isolated FastAPI application from concrete local dependencies."""
     resolved_settings = app_settings if app_settings is not None else load_settings()
@@ -31,7 +38,27 @@ def create_app(
         )
 
     resource_service = MockResourceService(resource_unit_of_work_factory)
-    application.include_router(create_api_router(resource_service))
+    authentication_availability_diagnostic = (
+        SafeAuthenticationAvailabilityDiagnostic()
+    )
+    authentication_composition = None
+    if email_registration_service is None:
+        authentication_composition = compose_email_registration(resolved_settings)
+        if authentication_composition is not None:
+            email_registration_service = authentication_composition.service
+
+    application.include_router(
+        create_api_router(
+            resource_service,
+            email_registration_service,
+            authentication_availability_diagnostic,
+        )
+    )
+    if authentication_composition is not None:
+        application.add_event_handler(
+            "shutdown",
+            lambda: dispose_database_engine(authentication_composition.engine),
+        )
 
     return application
 

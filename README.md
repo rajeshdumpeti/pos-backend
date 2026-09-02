@@ -7,8 +7,9 @@ architecture.
 ## Stack and requirements
 
 - Python 3.12.x
-- FastAPI and Pydantic
+- FastAPI, Pydantic, and email-validator
 - SQLAlchemy 2.x and Psycopg 3 data-access foundation
+- Argon2id password hashing and AES-GCM authentication-email encryption
 - Uvicorn
 - pytest and HTTPX
 
@@ -90,6 +91,22 @@ curl --fail-with-body http://127.0.0.1:8000/health
 curl --fail-with-body http://127.0.0.1:8000/tasks
 ```
 
+When `DATABASE_URL`, both authentication keys, and the current legal document
+versions are configured, the application also composes the versioned email
+registration API under `/api/v1/auth`. The local verification-email workflow is
+deliberately disabled by default. To inspect the latest pending encrypted
+outbox message locally, explicitly enable
+`AUTH_LOCAL_EMAIL_INSPECTION_ENABLED=true` in a local/development environment
+and invoke:
+
+```bash
+python -m app.infrastructure.authentication.local_email inspect-latest
+```
+
+Do not paste the displayed code into logs, reports, or source files. See
+[email registration and verification](docs/email-registration-verification.md)
+for the security and operational contract.
+
 ## Validate the environment
 
 Run the complete local validation from the repository root with `.venv`
@@ -132,10 +149,11 @@ setup script would duplicate them without adding a stable prerequisite check.
 
 ## Current limitations
 
-All current API mutations are held in memory and reset when the server restarts.
-The SQLAlchemy/Psycopg foundation is available only for explicit future
-composition; `DATABASE_URL` does not select it automatically. Local startup and
-CI require no PostgreSQL, Redis, migration, authentication, or cloud service.
+Generic mock API mutations remain in memory and reset when the server restarts.
+Email registration is composed only when its complete PostgreSQL, key, and
+legal-version configuration is present; partial configuration never selects an
+ambiguous adapter. Application import, health, Swagger, and the mock endpoints
+still require no PostgreSQL, Redis, authentication secret, or cloud service.
 The development CORS policy must not be treated as production configuration.
 
 ## Architecture
@@ -155,6 +173,12 @@ sensitive columns, and migration compatibility, is defined in
 [relational standards](docs/relational-standards.md). Milestone 09A establishes
 policy only; Milestone 10A encodes metadata and Alembic conventions, and
 Milestone 07-02 applies them to authentication persistence.
+
+The first public authentication API, password/email policy, verification
+lifecycle, encrypted outbox, and operational diagnosis are documented in
+[email registration and verification](docs/email-registration-verification.md).
+The mobile integration contract and UX-state mapping are in the
+[frontend registration handoff](docs/frontend-auth-registration-handoff.md).
 
 The implemented migration structure, offline validation commands, review rules,
 and live-database safety gate are documented in

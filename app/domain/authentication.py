@@ -32,6 +32,11 @@ class ChallengePurpose(StrEnum):
     EMAIL_CHANGE = "email_change"
 
 
+class ChallengeCompletionAction(StrEnum):
+    ACTIVATE_ACCOUNT = "activate_account"
+    ACCOUNT_EXISTS_NOTICE = "account_exists_notice"
+
+
 class OutboxStatus(StrEnum):
     PENDING = "pending"
     CLAIMED = "claimed"
@@ -140,7 +145,11 @@ class EmailVerificationChallengeRecord:
     target_normalized_email: str = field(repr=False)
     issued_at: datetime
     expires_at: datetime
+    flow_expires_at: datetime
     resend_available_at: datetime
+    digest_key_id: str = field(repr=False)
+    digest_key_version: int = field(repr=False)
+    completion_action: ChallengeCompletionAction
     attempts: int = 0
     max_attempts: int = 5
     status_version: int = 1

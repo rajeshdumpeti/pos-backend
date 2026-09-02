@@ -33,6 +33,11 @@ review unless a deliberate branch/merge migration has prior architecture
 approval. Do not edit a revision that has been applied outside an isolated local
 environment; create a new corrective revision.
 
+Revision `0003_registration_flow` is the single current head. It adds only the
+flow lifecycle/key metadata and deferred challenge-supersession support required
+by email registration. See
+[`email-registration-verification.md`](email-registration-verification.md).
+
 Inspect the graph without connecting to a database:
 
 ```bash
@@ -112,7 +117,10 @@ are never required for ordinary CI.
   baseline.
 - Milestone 07-02 introduces authentication persistence through reviewed
   revision `0002_auth_persistence` after authorized live local validation.
+- Milestone 07-03 extends that schema through focused revision
+  `0003_registration_flow`; it adds no table or seed data.
 
 The baseline creates no product schema. Revision `0002_auth_persistence` creates
-authentication persistence only; it adds no seed data, runtime adapter
-selection, or API behavior.
+authentication persistence only. Revision `0003_registration_flow` adds no
+product schema or seed data; runtime behavior remains owned by application and
+infrastructure composition.

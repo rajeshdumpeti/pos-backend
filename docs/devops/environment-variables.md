@@ -30,9 +30,10 @@ other values fail at application creation with an actionable error.
 - **Staging:** future release-candidate runtime; no deployment exists yet.
 - **Production:** future production runtime; no deployment exists yet.
 
-PostgreSQL, Redis, and JWT remain optional in every current context because no
-integration consumes them. A future production milestone must define required
-credentials and inject them from an approved secret manager.
+PostgreSQL and registration keys remain optional for mock-only local startup.
+Email registration is composed only when the database, both keys, and current
+legal versions are all configured. Staging and production require that complete
+set. Redis and JWT remain unused and optional.
 
 ## Local `.env`
 
@@ -56,6 +57,19 @@ and the server may be started without `--env-file .env`.
 | `DATABASE_URL` | unset         | Optional            | PostgreSQL URL when supplied |
 | `REDIS_URL`    | unset         | Optional            | Redis or TLS Redis URL when supplied |
 | `JWT_SECRET`   | unset         | Optional            | At least 32 characters when supplied |
+| `AUTH_CHALLENGE_DIGEST_KEY` | unset | Required for registration/protected environments | URL-safe base64 256-bit key |
+| `AUTH_CHALLENGE_DIGEST_KEY_ID` / `_VERSION` | named ID / `1` | Optional metadata | ID 1–64 characters; version positive |
+| `AUTH_OUTBOX_ENCRYPTION_KEY` | unset | Required for registration/protected environments | Separate URL-safe base64 256-bit key |
+| `AUTH_OUTBOX_ENCRYPTION_KEY_ID` / `_VERSION` | named ID / `1` | Optional metadata | ID 1–64 characters; version positive |
+| `AUTH_VERIFICATION_CODE_LIFETIME_SECONDS` | `600` | Frozen | Exactly 600 |
+| `AUTH_VERIFICATION_MAX_ATTEMPTS` | `5` | Frozen | Exactly 5 |
+| `AUTH_RESEND_COOLDOWN_SECONDS` | `60` | Frozen | Exactly 60 |
+| `AUTH_VERIFICATION_FLOW_LIFETIME_SECONDS` | `1800` | Optional tuning | At least code lifetime |
+| `AUTH_ARGON2_TIME_COST` | `3` | Optional tuning | At least 2 |
+| `AUTH_ARGON2_MEMORY_COST_KIB` | `65536` | Optional tuning | At least 19456 |
+| `AUTH_ARGON2_PARALLELISM` | `4` | Optional tuning | Positive integer |
+| `CURRENT_TERMS_VERSION` / `CURRENT_PRIVACY_VERSION` | unset | Required for registration/protected environments | 1–64 characters |
+| `AUTH_LOCAL_EMAIL_INSPECTION_ENABLED` | `false` | Local/development only | Explicit boolean |
 
 Whitespace and empty CORS entries are ignored, and duplicate origins are
 removed while preserving order. `*` cannot be combined with explicit origins.
@@ -66,7 +80,8 @@ requests.
 
 ## Secret safety
 
-Database URLs, Redis URLs, and JWT secrets use masked secret values. They are
+Database URLs, Redis URLs, JWT secrets, authentication digest keys, and outbox
+encryption keys use masked secret values. They are
 excluded from settings `repr`/string output, masked during settings
 serialization, and never exposed by HTTP or OpenAPI. Configuration errors name
 the affected variable but never repeat a supplied sensitive value.

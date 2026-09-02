@@ -133,9 +133,15 @@ class EmailVerificationChallengeModel(RelationalBase):
         CheckConstraint("max_attempts > 0", info={"purpose": "max_attempts_positive"}),
         CheckConstraint("attempts <= max_attempts", info={"purpose": "attempts_within_maximum"}),
         CheckConstraint("expires_at > issued_at", info={"purpose": "expiry_after_issue"}),
+        CheckConstraint("flow_expires_at >= expires_at", info={"purpose": "flow_expiry_after_code_expiry"}),
         CheckConstraint("resend_available_at >= issued_at", info={"purpose": "resend_after_issue"}),
+        CheckConstraint("digest_key_version > 0", info={"purpose": "digest_key_version_positive"}),
         CheckConstraint("status_version > 0", info={"purpose": "status_version_positive"}),
         CheckConstraint("purpose IN ('registration', 'email_change')", info={"purpose": "valid_purpose"}),
+        CheckConstraint(
+            "completion_action IN ('activate_account', 'account_exists_notice')",
+            info={"purpose": "valid_completion_action"},
+        ),
         Index(None, "user_account_id", "purpose", "expires_at"),
         Index(None, "expires_at", info={"purpose": "expiry_cleanup"}),
     )
@@ -148,11 +154,24 @@ class EmailVerificationChallengeModel(RelationalBase):
     target_normalized_email: Mapped[str] = mapped_column(String(320), nullable=False)
     issued_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False)
+    flow_expires_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False)
     consumed_at: Mapped[datetime | None] = mapped_column(TIMESTAMPTZ, nullable=True)
     attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
     resend_available_at: Mapped[datetime] = mapped_column(TIMESTAMPTZ, nullable=False)
-    superseded_by_id: Mapped[UUID | None] = mapped_column(UUID_TYPE, ForeignKey("email_verification_challenges.id", ondelete="SET NULL"), nullable=True)
+    digest_key_id: Mapped[str] = mapped_column(String(64), nullable=False)
+    digest_key_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    completion_action: Mapped[str] = mapped_column(String(32), nullable=False)
+    superseded_by_id: Mapped[UUID | None] = mapped_column(
+        UUID_TYPE,
+        ForeignKey(
+            "email_verification_challenges.id",
+            ondelete="SET NULL",
+            deferrable=True,
+            initially="DEFERRED",
+        ),
+        nullable=True,
+    )
     status_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
 

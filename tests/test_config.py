@@ -27,12 +27,21 @@ def test_local_settings_do_not_require_future_secrets():
 def test_supported_environment_names_are_normalized(
     environment_name: str, expected_environment: AppEnvironment
 ):
-    settings = load_settings(
-        {
-            "APP_ENV": f"  {environment_name}  ",
-            "CORS_ORIGINS": "http://localhost:8081",
-        }
-    )
+    environment = {
+        "APP_ENV": f"  {environment_name}  ",
+        "CORS_ORIGINS": "http://localhost:8081",
+    }
+    if expected_environment in {AppEnvironment.STAGING, AppEnvironment.PRODUCTION}:
+        environment.update(
+            {
+                "DATABASE_URL": "postgresql://fake-user:fake-password@localhost/pos",
+                "AUTH_CHALLENGE_DIGEST_KEY": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg",
+                "AUTH_OUTBOX_ENCRYPTION_KEY": "eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXk",
+                "CURRENT_TERMS_VERSION": "terms-test-v1",
+                "CURRENT_PRIVACY_VERSION": "privacy-test-v1",
+            }
+        )
+    settings = load_settings(environment)
 
     assert settings.app_env is expected_environment
 
