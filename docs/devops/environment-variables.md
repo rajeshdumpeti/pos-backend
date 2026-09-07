@@ -34,6 +34,9 @@ PostgreSQL and registration keys remain optional for mock-only local startup.
 Email registration is composed only when the database, both keys, and current
 legal versions are all configured. Email sessions are composed only when the
 database, JWT signing secret, and refresh-receipt encryption key are configured.
+Password recovery is composed only when the database, challenge/outbox keys, and
+reset URL are configured. Authentication email delivery defaults to local,
+network-free inspection and requires explicit Resend configuration to send.
 Staging and production require the complete registration and session set. Redis
 remains unused and optional.
 
@@ -74,6 +77,10 @@ and the server may be started without `--env-file .env`.
 | `AUTH_ARGON2_PARALLELISM` | `4` | Optional tuning | Positive integer |
 | `CURRENT_TERMS_VERSION` / `CURRENT_PRIVACY_VERSION` | unset | Required for registration/protected environments | 1–64 characters |
 | `AUTH_LOCAL_EMAIL_INSPECTION_ENABLED` | `false` | Local/development only | Explicit boolean |
+| `AUTH_EMAIL_PROVIDER` | `local` | Optional | `local` or `resend` |
+| `RESEND_API_KEY` | unset | Required only for `resend` | Secret value; never represented |
+| `AUTH_EMAIL_FROM` | unset | Required only for `resend` | Protected environments reject the `resend.dev` test domain |
+| `AUTH_PASSWORD_RESET_URL` | unset | Required to compose password recovery | HTTP(S); HTTPS required in protected environments |
 
 Whitespace and empty CORS entries are ignored, and duplicate origins are
 removed while preserving order. `*` cannot be combined with explicit origins.
@@ -84,7 +91,7 @@ requests.
 
 ## Secret safety
 
-Database URLs, Redis URLs, JWT secrets, authentication digest keys, and outbox
+Database URLs, Redis URLs, JWT secrets, provider API keys, authentication digest keys, and outbox
 encryption keys use masked secret values. They are
 excluded from settings `repr`/string output, masked during settings
 serialization, and never exposed by HTTP or OpenAPI. Configuration errors name

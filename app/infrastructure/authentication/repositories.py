@@ -2,12 +2,12 @@
 
 from collections.abc import Sequence
 from dataclasses import fields
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import NoReturn
 from uuid import UUID, uuid4
 from enum import Enum
 
-from sqlalchemy import Select, select, update
+from sqlalchemy import Select, or_, select, update
 from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session
@@ -166,6 +166,27 @@ class SqlAlchemyUserAccountRepository:
                 update(UserAccountModel)
                 .where(UserAccountModel.id == account_id)
                 .values(password_hash=password_hash, updated_at=updated_at)
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
+
+    def replace_password_and_increment_epoch(
+        self, account_id: AccountId, password_hash: str, updated_at: datetime
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(UserAccountModel)
+                .where(UserAccountModel.id == account_id)
+                .values(
+                    password_hash=password_hash,
+                    authentication_epoch=UserAccountModel.authentication_epoch + 1,
+                    updated_at=updated_at,
+                )
             )
         except SQLAlchemyError as error:
             raise_safe_database_error(
@@ -469,6 +490,26 @@ class SqlAlchemyPasswordResetChallengeRepository:
             )
         return result.rowcount == 1
 
+    def consume_active_for_account(
+        self, account_id: AccountId, consumed_at: datetime
+    ) -> int:
+        try:
+            result = self._session.execute(
+                update(PasswordResetChallengeModel)
+                .where(
+                    PasswordResetChallengeModel.user_account_id == account_id,
+                    PasswordResetChallengeModel.consumed_at.is_(None),
+                )
+                .values(consumed_at=consumed_at)
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount
+
 
 class SqlAlchemyRefreshSessionRepository:
     def __init__(self, session: Session) -> None:
@@ -700,6 +741,7 @@ class SqlAlchemySecurityEventRepository:
 
 
 class SqlAlchemyAuthenticationEmailOutboxRepository:
+    _CLAIM_LEASE = timedelta(minutes=5)
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -716,8 +758,21 @@ class SqlAlchemyAuthenticationEmailOutboxRepository:
             models = self._session.scalars(
                 select(AuthenticationEmailOutboxModel)
                 .where(
-                    AuthenticationEmailOutboxModel.status == OutboxStatus.PENDING.value,
-                    AuthenticationEmailOutboxModel.available_at <= now,
+                    or_(
+                        (
+                            AuthenticationEmailOutboxModel.status
+                            == OutboxStatus.PENDING.value
+                        )
+                        & (AuthenticationEmailOutboxModel.available_at <= now),
+                        (
+                            AuthenticationEmailOutboxModel.status
+                            == OutboxStatus.CLAIMED.value
+                        )
+                        & (
+                            AuthenticationEmailOutboxModel.claimed_at
+                            <= now - self._CLAIM_LEASE
+                        ),
+                    ),
                 )
                 .order_by(AuthenticationEmailOutboxModel.created_at)
                 .limit(limit)
@@ -735,6 +790,79 @@ class SqlAlchemyAuthenticationEmailOutboxRepository:
                 error,
             )
         return [_outbox_record(model) for model in models]
+
+    def mark_delivered(
+        self, outbox_id: UUID, claim_id: UUID, delivered_at: datetime,
+        provider_message_id: str,
+    ) -> bool:
+        return self._mark_claimed(
+            outbox_id, claim_id, status=OutboxStatus.DELIVERED,
+            delivered_at=delivered_at, provider_message_id=provider_message_id,
+        )
+
+    def mark_failed(
+        self, outbox_id: UUID, claim_id: UUID, failed_at: datetime, category: str
+    ) -> bool:
+        return self._mark_claimed(
+            outbox_id, claim_id, status=OutboxStatus.FAILED,
+            failed_at=failed_at, failure_category=category,
+        )
+
+    def release_for_retry(
+        self, outbox_id: UUID, claim_id: UUID, available_at: datetime, category: str
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(AuthenticationEmailOutboxModel)
+                .where(
+                    AuthenticationEmailOutboxModel.id == outbox_id,
+                    AuthenticationEmailOutboxModel.status == OutboxStatus.CLAIMED.value,
+                    AuthenticationEmailOutboxModel.claim_id == claim_id,
+                )
+                .values(
+                    status=OutboxStatus.PENDING.value,
+                    available_at=available_at,
+                    claimed_at=None,
+                    claim_id=None,
+                    failure_category=category,
+                    attempt_count=AuthenticationEmailOutboxModel.attempt_count + 1,
+                )
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed", error,
+            )
+        return result.rowcount == 1
+
+    def _mark_claimed(
+        self, outbox_id: UUID, claim_id: UUID, *, status: OutboxStatus,
+        delivered_at: datetime | None = None,
+        failed_at: datetime | None = None,
+        provider_message_id: str | None = None,
+        failure_category: str | None = None,
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(AuthenticationEmailOutboxModel)
+                .where(
+                    AuthenticationEmailOutboxModel.id == outbox_id,
+                    AuthenticationEmailOutboxModel.status == OutboxStatus.CLAIMED.value,
+                    AuthenticationEmailOutboxModel.claim_id == claim_id,
+                )
+                .values(
+                    status=status.value, delivered_at=delivered_at,
+                    failed_at=failed_at, provider_message_id=provider_message_id,
+                    failure_category=failure_category,
+                    attempt_count=AuthenticationEmailOutboxModel.attempt_count + 1,
+                )
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed", error,
+            )
+        return result.rowcount == 1
 
 
 def _account_record(model: object) -> UserAccountRecord:

@@ -165,6 +165,23 @@ def test_direct_settings_construction_cannot_bypass_secret_validation():
 
 
 def test_load_settings_calls_are_isolated(monkeypatch: pytest.MonkeyPatch):
+    # The test exercises process reloads, not whichever optional integration
+    # variables a full PostgreSQL-enabled invocation exported.
+    for name in (
+        "DATABASE_URL",
+        "POS_TEST_DATABASE_URL",
+        "JWT_SECRET",
+        "AUTH_CHALLENGE_DIGEST_KEY",
+        "AUTH_OUTBOX_ENCRYPTION_KEY",
+        "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY",
+        "CURRENT_TERMS_VERSION",
+        "CURRENT_PRIVACY_VERSION",
+        "AUTH_EMAIL_PROVIDER",
+        "RESEND_API_KEY",
+        "AUTH_EMAIL_FROM",
+        "AUTH_PASSWORD_RESET_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("APP_ENV", "test")
     first_settings = load_settings()
 

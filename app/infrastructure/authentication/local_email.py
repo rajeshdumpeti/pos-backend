@@ -9,6 +9,8 @@ from app.config import AppEnvironment, decode_authentication_key, load_settings
 from app.domain.registration import mask_email
 from app.infrastructure.authentication.models import AuthenticationEmailOutboxModel
 from app.infrastructure.authentication.registration import AesGcmOutboxCipher
+from app.domain.authentication import OutboxMessageKind
+from app.infrastructure.authentication.email_delivery import _reset_link
 from app.infrastructure.database import (
     create_database_engine,
     create_session_factory,
@@ -49,17 +51,24 @@ def inspect_latest() -> int:
             key_id=settings.auth_outbox_encryption_key_id,
             key_version=settings.auth_outbox_encryption_key_version,
         )
-        message = cipher.decrypt(
-            EncryptedOutboxPayload(
-                ciphertext=record.payload_ciphertext,
-                key_id=record.encryption_key_id,
-                key_version=record.encryption_key_version,
-            ),
-            context=record.deduplication_key.encode("ascii"),
+        payload = EncryptedOutboxPayload(
+            ciphertext=record.payload_ciphertext,
+            key_id=record.encryption_key_id,
+            key_version=record.encryption_key_version,
         )
         print(f"Destination: {mask_email(record.recipient_normalized_email)}")
-        print(f"Verification code: {message.code}")
-        print(f"Expires at: {message.expires_at.isoformat()}")
+        if record.message_kind == OutboxMessageKind.PASSWORD_RESET.value:
+            message = cipher.decrypt_password_reset(
+                payload, context=record.deduplication_key.encode("ascii")
+            )
+            print(f"Password reset link: {_reset_link(message.reset_url, message.token)}")
+            print(f"Expires at: {message.expires_at.isoformat()}")
+        else:
+            message = cipher.decrypt(
+                payload, context=record.deduplication_key.encode("ascii")
+            )
+            print(f"Verification code: {message.code}")
+            print(f"Expires at: {message.expires_at.isoformat()}")
         return 0
     except BaseException:
         print("Local email inspection failed safely")

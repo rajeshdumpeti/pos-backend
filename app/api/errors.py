@@ -44,6 +44,14 @@ from app.domain import (
     ResourceMutationNotAllowedError,
     UnknownResourceError,
 )
+from app.application.password_recovery import (
+    PasswordRecoveryDependencyUnavailableError,
+    PasswordRecoveryError,
+    PasswordRecoveryInternalError,
+    ResetPasswordRejectedError,
+    ResetTokenExpiredError,
+    ResetTokenInvalidError,
+)
 
 
 _ERROR_DESCRIPTIONS = {
@@ -96,6 +104,7 @@ def register_exception_handlers(application: FastAPI) -> None:
         RegistrationVerificationError, _handle_registration_error
     )
     application.add_exception_handler(SessionLifecycleError, _handle_session_error)
+    application.add_exception_handler(PasswordRecoveryError, _handle_password_recovery_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(StarletteHTTPException, _handle_http_error)
     application.add_exception_handler(Exception, _handle_unexpected_error)
@@ -237,6 +246,22 @@ async def _handle_session_error(
     if isinstance(error, SessionDependencyUnavailableError):
         return _error_response(request, 503, "dependency_unavailable", "A required dependency is unavailable")
     if isinstance(error, SessionInternalError):
+        return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
+    return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
+
+
+async def _handle_password_recovery_error(
+    request: Request, error: PasswordRecoveryError
+) -> JSONResponse:
+    if isinstance(error, ResetTokenInvalidError):
+        return _error_response(request, 400, "reset_token_invalid", "Reset token is invalid")
+    if isinstance(error, ResetTokenExpiredError):
+        return _error_response(request, 410, "reset_token_expired", "Reset token expired")
+    if isinstance(error, ResetPasswordRejectedError):
+        return _error_response(request, 400, "password_rejected", "Password was rejected")
+    if isinstance(error, PasswordRecoveryDependencyUnavailableError):
+        return _error_response(request, 503, "dependency_unavailable", "A required dependency is unavailable")
+    if isinstance(error, PasswordRecoveryInternalError):
         return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
     return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
 

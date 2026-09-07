@@ -103,9 +103,15 @@ and invoke:
 python -m app.infrastructure.authentication.local_email inspect-latest
 ```
 
-Do not paste the displayed code into logs, reports, or source files. See
+Do not paste the displayed code or reset link into logs, reports, or source files. See
 [email registration and verification](docs/email-registration-verification.md)
 for the security and operational contract.
+
+Password recovery is composed independently when PostgreSQL, the existing
+challenge/outbox keys, and `AUTH_PASSWORD_RESET_URL` are configured. Requests
+remain enumeration-resistant and email is queued transactionally. Local mode
+performs no network delivery. See
+[password recovery and email delivery](docs/password-recovery-and-email-delivery.md).
 
 ## Validate the environment
 
@@ -184,6 +190,10 @@ The mobile integration contract and UX-state mapping are in the
 Email sign-in, rotating refresh sessions, logout, and the draft mobile contract
 are documented in [session lifecycle](docs/email-sign-in-session-lifecycle.md)
 and [frontend session handoff](docs/frontend-auth-session-handoff.md).
+Password recovery, provider-neutral transactional email, and the mobile contract
+are documented in
+[password recovery and email delivery](docs/password-recovery-and-email-delivery.md)
+and [frontend password-recovery handoff](docs/frontend-auth-password-recovery-handoff.md).
 
 The implemented migration structure, offline validation commands, review rules,
 and live-database safety gate are documented in

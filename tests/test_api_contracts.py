@@ -168,6 +168,8 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
             "refresh_email_session",
             "get_current_session",
             "delete_current_session",
+            "request_password_reset",
+            "confirm_password_reset",
             "get_mock_resource",
         "create_mock_resource_item",
         "update_mock_resource_item",
