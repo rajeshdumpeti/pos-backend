@@ -177,3 +177,20 @@ class CurrentSessionResponse(BaseModel):
     session_id: UUID
     display_name: str
     onboarding_required: bool
+
+
+class PasswordResetRequest(AuthenticationRequest):
+    email: str = Field(min_length=3, max_length=320)
+
+
+class PasswordResetAcceptedResponse(BaseModel):
+    status: Literal["instructions_if_eligible"]
+
+
+class ConfirmPasswordResetRequest(AuthenticationRequest):
+    token: SecretStr = Field(
+        min_length=43, max_length=128, json_schema_extra={"writeOnly": True}
+    )
+    new_password: SecretStr = Field(
+        min_length=15, max_length=1024, json_schema_extra={"writeOnly": True}
+    )

@@ -18,6 +18,9 @@ from app.api.authentication_schemas import (
     RefreshSessionRequest,
     SessionTokenResponse,
     CurrentSessionResponse,
+    PasswordResetRequest,
+    PasswordResetAcceptedResponse,
+    ConfirmPasswordResetRequest,
 )
 from app.application.email_registration import (
     AuthenticationAvailabilityDiagnostic,
@@ -33,6 +36,12 @@ from app.application.session_lifecycle import (
     EmailSessionService,
     RefreshCommand,
     SignInCommand,
+)
+from app.application.password_recovery import (
+    ConfirmPasswordResetCommand,
+    PasswordRecoveryDependencyUnavailableError,
+    PasswordRecoveryService,
+    RequestPasswordResetCommand,
 )
 
 
@@ -67,6 +76,7 @@ def create_authentication_router(
     service: EmailRegistrationService | None,
     availability_diagnostic: AuthenticationAvailabilityDiagnostic,
     session_service: EmailSessionService | None = None,
+    password_recovery_service: PasswordRecoveryService | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
     bearer = HTTPBearer(auto_error=False)
@@ -93,6 +103,18 @@ def create_authentication_router(
                 "Session dependencies are unavailable"
             )
         return session_service
+
+    def require_password_recovery_service(
+        *, operation: str, request: Request
+    ) -> PasswordRecoveryService:
+        if password_recovery_service is None:
+            availability_diagnostic.emit_configuration_incomplete(
+                operation=operation, request_id=get_request_id(request)
+            )
+            raise PasswordRecoveryDependencyUnavailableError(
+                "Password recovery dependencies are unavailable"
+            )
+        return password_recovery_service
 
     def access_token(
         credentials: HTTPAuthorizationCredentials | None,
@@ -291,5 +313,51 @@ def create_authentication_router(
             access_token(credentials), get_request_id(request)
         )
         return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+    @router.post(
+        "/password-resets",
+        operation_id="request_password_reset",
+        summary="Request password reset instructions",
+        status_code=status.HTTP_202_ACCEPTED,
+        response_model=PasswordResetAcceptedResponse,
+        responses=_responses(500, 503),
+    )
+    def request_password_reset(
+        payload: PasswordResetRequest, request: Request, response: Response
+    ) -> PasswordResetAcceptedResponse:
+        result = require_password_recovery_service(
+            operation="password_reset_request", request=request
+        ).request(
+            RequestPasswordResetCommand(
+                email=payload.email, request_id=get_request_id(request)
+            )
+        )
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
+        return PasswordResetAcceptedResponse(status=result.status)
+
+    @router.post(
+        "/password-resets/confirm",
+        operation_id="confirm_password_reset",
+        summary="Confirm a password reset",
+        status_code=status.HTTP_204_NO_CONTENT,
+        responses=_responses(400, 410, 500, 503),
+    )
+    def confirm_password_reset(
+        payload: ConfirmPasswordResetRequest, request: Request
+    ) -> Response:
+        require_password_recovery_service(
+            operation="password_reset_confirm", request=request
+        ).confirm(
+            ConfirmPasswordResetCommand(
+                token=payload.token.get_secret_value(),
+                new_password=payload.new_password.get_secret_value(),
+                request_id=get_request_id(request),
+            )
+        )
+        return Response(
+            status_code=status.HTTP_204_NO_CONTENT,
+            headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+        )
 
     return router

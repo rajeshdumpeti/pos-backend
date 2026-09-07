@@ -91,3 +91,7 @@ and offline validation workflow are defined in
 Email sign-in, JWT validation, refresh rotation/retry, and logout are orchestrated
 by the application layer and documented in
 [`email-sign-in-session-lifecycle.md`](email-sign-in-session-lifecycle.md).
+Password-reset orchestration remains in the application layer; SQLAlchemy
+locking and outbox state transitions remain infrastructure concerns. The
+provider-neutral worker decrypts only claimed messages at the delivery boundary.
+See [`password-recovery-and-email-delivery.md`](password-recovery-and-email-delivery.md).

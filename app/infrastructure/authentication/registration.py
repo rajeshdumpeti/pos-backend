@@ -22,6 +22,10 @@ from app.application.email_registration import (
     IssuedVerificationMaterial,
     VerificationEmailMessage,
 )
+from app.application.password_recovery import (
+    IssuedPasswordResetMaterial,
+    PasswordResetEmailMessage,
+)
 from app.domain.authentication import ChallengePurpose, EmailVerificationChallengeRecord
 from app.domain.registration import EmailPolicyError, NormalizedEmail
 
@@ -178,6 +182,36 @@ class HmacVerificationMaterialProvider:
         return hmac.new(self._key, payload, hashlib.sha256).hexdigest()
 
 
+class HmacPasswordResetMaterialProvider:
+    """Issue opaque 256-bit tokens and retain only domain-separated digests."""
+
+    def __init__(self, key: bytes) -> None:
+        if len(key) != 32:
+            raise ValueError("Password-reset digest key must be 256 bits")
+        self._key = key
+
+    def issue(
+        self, challenge_id: object, request_id: str
+    ) -> IssuedPasswordResetMaterial:
+        token = secrets.token_urlsafe(32)
+        return IssuedPasswordResetMaterial(
+            token=token,
+            token_digest=self.lookup_digest(token),
+            request_security_digest=self._digest(
+                "request", f"{challenge_id}:{request_id}"
+            ),
+        )
+
+    def lookup_digest(self, token: str) -> str:
+        if len(token) < 43 or len(token) > 128:
+            raise ValueError("Invalid reset token")
+        return self._digest("token", token)
+
+    def _digest(self, purpose: str, value: str) -> str:
+        payload = f"pos-auth:password-reset:{purpose}:v1:{value}".encode("utf-8")
+        return hmac.new(self._key, payload, hashlib.sha256).hexdigest()
+
+
 class AesGcmOutboxCipher:
     """AES-256-GCM envelope for authentication email payloads."""
 
@@ -233,6 +267,57 @@ class AesGcmOutboxCipher:
                 code=str(decoded["code"]),
                 expires_at=_parse_datetime(str(decoded["expires_at"])),
                 purpose=ChallengePurpose(str(decoded["purpose"])),
+            )
+        except (InvalidTag, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+            _raise_crypto_error("Authentication email decryption failed", error)
+
+    def encrypt_password_reset(
+        self, message: PasswordResetEmailMessage, *, context: bytes
+    ) -> EncryptedOutboxPayload:
+        plaintext = json.dumps(
+            {
+                "kind": "password_reset",
+                "token": message.token,
+                "reset_url": message.reset_url,
+                "expires_at": message.expires_at.isoformat(),
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+        nonce = secrets.token_bytes(self._NONCE_BYTES)
+        try:
+            encrypted = self._cipher.encrypt(nonce, plaintext, context)
+        except Exception as error:
+            _raise_crypto_error("Authentication email encryption failed", error)
+        return EncryptedOutboxPayload(
+            ciphertext=nonce + encrypted,
+            key_id=self._key_id,
+            key_version=self._key_version,
+        )
+
+    def decrypt_password_reset(
+        self, payload: EncryptedOutboxPayload, *, context: bytes
+    ) -> PasswordResetEmailMessage:
+        if (
+            payload.key_id != self._key_id
+            or payload.key_version != self._key_version
+            or len(payload.ciphertext) <= self._NONCE_BYTES
+        ):
+            raise AuthenticationCryptographyError(
+                "Authentication email key version is unavailable"
+            )
+        nonce = payload.ciphertext[: self._NONCE_BYTES]
+        try:
+            plaintext = self._cipher.decrypt(
+                nonce, payload.ciphertext[self._NONCE_BYTES :], context
+            )
+            decoded = json.loads(plaintext)
+            if decoded.get("kind") != "password_reset":
+                raise ValueError("Unexpected email payload")
+            return PasswordResetEmailMessage(
+                token=str(decoded["token"]),
+                reset_url=str(decoded["reset_url"]),
+                expires_at=_parse_datetime(str(decoded["expires_at"])),
             )
         except (InvalidTag, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
             _raise_crypto_error("Authentication email decryption failed", error)

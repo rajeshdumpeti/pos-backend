@@ -4,6 +4,7 @@ from collections.abc import Mapping
 import base64
 import binascii
 from enum import StrEnum
+from email.utils import parseaddr
 import os
 from typing import Self
 from urllib.parse import urlsplit
@@ -21,6 +22,11 @@ class AppEnvironment(StrEnum):
     TEST = "test"
     STAGING = "staging"
     PRODUCTION = "production"
+
+
+class AuthenticationEmailProvider(StrEnum):
+    LOCAL = "local"
+    RESEND = "resend"
 
 
 class Settings(BaseModel):
@@ -52,6 +58,10 @@ class Settings(BaseModel):
     current_terms_version: str | None = None
     current_privacy_version: str | None = None
     local_email_inspection_enabled: bool = False
+    auth_email_provider: AuthenticationEmailProvider = AuthenticationEmailProvider.LOCAL
+    resend_api_key: SecretStr | None = Field(default=None, repr=False)
+    auth_email_from: str | None = None
+    auth_password_reset_url: str | None = Field(default=None, repr=False)
 
     @model_validator(mode="after")
     def validate_configuration(self) -> Self:
@@ -263,6 +273,47 @@ def _validate_authentication_settings(settings: Settings) -> None:
         raise ConfigurationError(
             "AUTH_LOCAL_EMAIL_INSPECTION_ENABLED is restricted to local and development"
         )
+    if settings.auth_password_reset_url is not None:
+        try:
+            reset_url = urlsplit(settings.auth_password_reset_url)
+        except ValueError:
+            raise ConfigurationError("AUTH_PASSWORD_RESET_URL must be a valid URL") from None
+        if (
+            reset_url.scheme not in {"http", "https"}
+            or not reset_url.hostname
+            or reset_url.username is not None
+            or reset_url.password is not None
+            or reset_url.fragment
+        ):
+            raise ConfigurationError("AUTH_PASSWORD_RESET_URL must be a valid HTTP(S) URL")
+        if settings.app_env in _PROTECTED_ENVIRONMENTS and reset_url.scheme != "https":
+            raise ConfigurationError("AUTH_PASSWORD_RESET_URL must use HTTPS in protected environments")
+    if settings.auth_email_provider is AuthenticationEmailProvider.RESEND:
+        missing_email = [
+            name for name, value in (
+                ("RESEND_API_KEY", settings.resend_api_key),
+                ("AUTH_EMAIL_FROM", settings.auth_email_from),
+            ) if value is None
+        ]
+        if missing_email:
+            raise ConfigurationError(
+                "Resend email delivery requires: " + ", ".join(missing_email)
+            )
+        assert settings.auth_email_from is not None
+        _display_name, sender_address = parseaddr(settings.auth_email_from)
+        if (
+            not sender_address
+            or "@" not in sender_address
+            or "\r" in settings.auth_email_from
+            or "\n" in settings.auth_email_from
+            or len(settings.auth_email_from) > 320
+        ):
+            raise ConfigurationError("AUTH_EMAIL_FROM must be a valid sender address")
+        if (
+            settings.app_env in _PROTECTED_ENVIRONMENTS
+            and sender_address.casefold().endswith("@resend.dev")
+        ):
+            raise ConfigurationError("AUTH_EMAIL_FROM must use a verified sender domain")
 
 
 def _parse_cors_origins(
@@ -380,4 +431,20 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         local_email_inspection_enabled=_parse_bool(
             source, "AUTH_LOCAL_EMAIL_INSPECTION_ENABLED", False
         ),
+        auth_email_provider=_parse_email_provider(source),
+        resend_api_key=(
+            None
+            if _optional_value(source, "RESEND_API_KEY") is None
+            else SecretStr(_optional_value(source, "RESEND_API_KEY") or "")
+        ),
+        auth_email_from=_optional_value(source, "AUTH_EMAIL_FROM"),
+        auth_password_reset_url=_optional_value(source, "AUTH_PASSWORD_RESET_URL"),
     )
+
+
+def _parse_email_provider(environ: Mapping[str, str]) -> AuthenticationEmailProvider:
+    raw = (_optional_value(environ, "AUTH_EMAIL_PROVIDER") or "local").lower()
+    try:
+        return AuthenticationEmailProvider(raw)
+    except ValueError:
+        raise ConfigurationError("AUTH_EMAIL_PROVIDER must be local or resend") from None

@@ -53,6 +53,23 @@ def test_composition_preserves_configured_cors_behavior():
 
 
 def test_default_composition_reloads_process_settings(monkeypatch):
+    # Keep this process-settings assertion independent of optional integration
+    # credentials exported by a PostgreSQL-enabled test invocation.
+    for name in (
+        "DATABASE_URL",
+        "POS_TEST_DATABASE_URL",
+        "JWT_SECRET",
+        "AUTH_CHALLENGE_DIGEST_KEY",
+        "AUTH_OUTBOX_ENCRYPTION_KEY",
+        "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY",
+        "CURRENT_TERMS_VERSION",
+        "CURRENT_PRIVACY_VERSION",
+        "AUTH_EMAIL_PROVIDER",
+        "RESEND_API_KEY",
+        "AUTH_EMAIL_FROM",
+        "AUTH_PASSWORD_RESET_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("APP_ENV", "test")
     first_app = create_app()
 
@@ -79,6 +96,36 @@ def test_default_composition_reloads_process_settings(monkeypatch):
     assert second_response.headers["access-control-allow-origin"] == (
         "http://localhost:8081"
     )
+
+
+def test_database_enabled_composition_does_not_leak_into_later_settings(monkeypatch):
+    """Regression for full PostgreSQL invocations contaminating process settings."""
+    monkeypatch.setenv("APP_ENV", "test")
+    monkeypatch.setenv("DATABASE_URL", "postgresql://fake-user:fake-password@127.0.0.1/pos_test")
+    monkeypatch.setenv(
+        "AUTH_CHALLENGE_DIGEST_KEY",
+        "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg",
+    )
+    monkeypatch.setenv(
+        "AUTH_OUTBOX_ENCRYPTION_KEY",
+        "eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXk",
+    )
+    monkeypatch.setenv("CURRENT_TERMS_VERSION", "terms-test-v1")
+    monkeypatch.setenv("CURRENT_PRIVACY_VERSION", "privacy-test-v1")
+    monkeypatch.setenv("AUTH_PASSWORD_RESET_URL", "https://app.example.test/reset")
+    create_app()
+
+    for name in (
+        "DATABASE_URL", "AUTH_CHALLENGE_DIGEST_KEY", "AUTH_OUTBOX_ENCRYPTION_KEY",
+        "CURRENT_TERMS_VERSION", "CURRENT_PRIVACY_VERSION", "AUTH_PASSWORD_RESET_URL",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("APP_ENV", "development")
+    monkeypatch.delenv("CORS_ORIGINS", raising=False)
+    settings = load_settings()
+    assert settings.database_url is None
+    assert settings.auth_password_reset_url is None
+    assert settings.cors_origins == ("*",)
 
 
 def test_secret_values_are_not_exposed_through_http_or_openapi():
