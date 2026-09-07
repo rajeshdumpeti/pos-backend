@@ -29,8 +29,8 @@ class RegistrationRequest(AuthenticationRequest):
             }
         },
     )
-    display_name: str = Field(min_length=1, max_length=160)
-    email: str = Field(min_length=3, max_length=320)
+    display_name: str = Field(min_length=1, max_length=160, repr=False)
+    email: str = Field(min_length=3, max_length=320, repr=False)
     password: SecretStr = Field(
         min_length=15,
         max_length=1024,
@@ -96,7 +96,7 @@ class ChangeUnverifiedEmailRequest(AuthenticationRequest):
         max_length=128,
         json_schema_extra={"writeOnly": True},
     )
-    new_email: str = Field(min_length=3, max_length=320)
+    new_email: str = Field(min_length=3, max_length=320, repr=False)
 
 
 class PendingVerificationResponse(BaseModel):
@@ -113,7 +113,7 @@ class PendingVerificationResponse(BaseModel):
         }
     )
     status: Literal["registration_pending"]
-    flow_token: str
+    flow_token: str = Field(repr=False)
     masked_email: str
     verification_expires_at: datetime
     flow_expires_at: datetime
@@ -152,7 +152,7 @@ class AuthenticationErrorResponse(BaseModel):
 
 
 class SignInRequest(AuthenticationRequest):
-    email: str = Field(min_length=3, max_length=320)
+    email: str = Field(min_length=3, max_length=320, repr=False)
     password: SecretStr = Field(min_length=1, max_length=1024, json_schema_extra={"writeOnly": True})
     remember_me: bool = False
 
@@ -180,7 +180,7 @@ class CurrentSessionResponse(BaseModel):
 
 
 class PasswordResetRequest(AuthenticationRequest):
-    email: str = Field(min_length=3, max_length=320)
+    email: str = Field(min_length=3, max_length=320, repr=False)
 
 
 class PasswordResetAcceptedResponse(BaseModel):

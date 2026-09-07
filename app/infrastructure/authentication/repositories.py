@@ -736,6 +736,8 @@ class SqlAlchemySecurityEventRepository:
         self._session = session
 
     def append(self, record: SecurityEventRecord) -> None:
+        # Revalidate mutable metadata immediately before persistence.
+        record.__post_init__()
         self._session.add(SecurityEventModel(**_record_values(record)))
         _flush(self._session)
 

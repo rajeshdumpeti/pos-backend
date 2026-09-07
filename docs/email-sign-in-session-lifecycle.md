@@ -1,5 +1,8 @@
 # Email sign-in and secure session lifecycle
 
+Current security policy: [Milestone 07-08](authentication-security-hardening.md).
+Earlier deferred-control notes below describe the milestone at its original delivery.
+
 This is the canonical Milestone 07-04 design for verified email sign-in and
 session lifecycle. Registration remains documented separately. Social sign-in,
 password recovery, biometrics, rate limiting, and final account-lockout policy

@@ -145,6 +145,7 @@ class PasswordRecoveryService:
         self._identifier_factory = identifier_factory
 
     def request(self, command: RequestPasswordResetCommand) -> PasswordResetAcceptedResult:
+        state_access_started = False
         try:
             now = self._clock()
             challenge_id = ChallengeId(self._identifier_factory())
@@ -161,6 +162,7 @@ class PasswordRecoveryService:
                 normalized = self._email_normalizer.normalize(command.email)
             except EmailPolicyError:
                 normalized = None
+            state_access_started = True
             with self._unit_of_work_factory(command.request_id) as unit:
                 identity = None
                 account = None
@@ -213,16 +215,23 @@ class PasswordRecoveryService:
                     unit.commit()
         except AuthenticationPersistenceUnavailableError as error:
             self._failure("password_reset_request", command.request_id, "dependency")
-            raise PasswordRecoveryDependencyUnavailableError(
-                "Password recovery dependency is unavailable"
-            ) from error
+            # A write-only failure for an eligible account must not reveal it.
+            # The UoW has already rolled back before reaching this handler.
+            return PasswordResetAcceptedResult()
         except AuthenticationCryptographyError:
             self._failure("password_reset_request", command.request_id, "cryptography")
+            if state_access_started:
+                return PasswordResetAcceptedResult()
             raise
         except PasswordRecoveryError:
+            if state_access_started:
+                self._failure("password_reset_request", command.request_id, "internal")
+                return PasswordResetAcceptedResult()
             raise
         except Exception as error:
             self._failure("password_reset_request", command.request_id, "internal")
+            if state_access_started:
+                return PasswordResetAcceptedResult()
             _raise_internal("Password recovery failed", error)
         self._event_logger.emit(
             event="authentication_operation", operation="password_reset_request",

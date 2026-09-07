@@ -104,3 +104,24 @@ replaced with fake production credentials.
 
 See the repository [README](../../README.md) for setup and validation, and
 [secrets management](secrets-management.md) for handling and incident rules.
+
+
+## Authentication security (07-08)
+
+The [canonical security policy](../authentication-security-hardening.md) specifies
+all configurable operation thresholds and bounds. New settings:
+AUTH_RATE_LIMIT_BACKEND (memory locally, redis required in staging/production),
+AUTH_RATE_LIMIT_KEY (dedicated secret), AUTH_RATE_LIMIT_GLOBAL (10000/minute),
+AUTH_RATE_LIMIT_MAX_ENTRIES (100000), AUTH_REDIS_TIMEOUT_MS (200),
+AUTH_TRUSTED_PROXY_NETWORKS (empty), AUTH_PUBLIC_ORIGIN (HTTPS in protected mode),
+AUTH_MAX_BODY_BYTES (16384), AUTH_MAX_AUTHORIZATION_BYTES (4096), and
+AUTH_LIMIT_<OPERATION>_{SOURCE,IDENTITY,WINDOW_SECONDS}. REDIS_URL remains secret;
+query options/fragment are forbidden. Zero JWT skew remains frozen.
+Protected mode also requires a real email provider and reset destination.
+
+Run Uvicorn with --no-proxy-headers --no-access-log --no-server-header so the
+application observes the actual immediate peer and secrets do not enter URL logs.
+Configure trusted proxies to append the actual peer or overwrite XFF. Do not use
+an ordinary development Redis database for tests. The optional integration guard
+requires POS_TEST_REDIS_URL targeting a disposable local database 15 and
+POS_TEST_REDIS_DISPOSABLE=1; tests delete only their unique namespace keys.

@@ -187,6 +187,8 @@ class EmailSessionService:
         self._identifier_factory = identifier_factory
 
     def sign_in(self, command: SignInCommand) -> SessionTokenResult:
+        if not 1 <= len(command.password) <= 1024 or len(command.email) > 320:
+            raise InvalidCredentialsError("Email or password is invalid")
         try:
             normalized = self._email_normalizer.normalize(command.email).comparison
         except ValueError:
@@ -277,12 +279,13 @@ class EmailSessionService:
                     receipt_session = unit.refresh_sessions.get_for_update(
                         receipt.refresh_session_id
                     )
+                    receipt_account = (None if receipt_session is None else
+                        unit.accounts.get_for_update(receipt_session.user_account_id))
                     if (
                         receipt.refresh_request_id == command.refresh_request_id
                         and receipt.expires_at > now
                         and receipt_session is not None
-                        and receipt_session.revoked_at is None
-                        and now < receipt_session.expires_at
+                        and self._active(receipt_session, receipt_account, now)
                     ):
                         result = self._receipt_cipher.decrypt(
                             receipt, context=self._receipt_context(receipt.id)
@@ -376,6 +379,8 @@ class EmailSessionService:
 
     def current(self, access_token: str, request_id: str) -> CurrentSessionResult:
         claims, account = self.authenticate(access_token, request_id)
+        self._diagnostic("session_restored", "current_session", "succeeded", request_id,
+                         account_id=claims.account_id, session_id=claims.session_id)
         return CurrentSessionResult(
             account_id=claims.account_id,
             session_id=claims.session_id,
@@ -390,6 +395,12 @@ class EmailSessionService:
             with self._unit_of_work_factory(request_id) as unit:
                 session = unit.refresh_sessions.get_for_update(claims.session_id)
                 if session is None or session.user_account_id != claims.account_id:
+                    raise AccessTokenInvalidError("Access token is invalid")
+                account = unit.accounts.get_for_update(claims.account_id)
+                if session.revoked_at is not None:
+                    return
+                if (claims.authentication_epoch != session.authentication_epoch
+                        or not self._active(session, account, now)):
                     raise AccessTokenInvalidError("Access token is invalid")
                 changed = unit.refresh_sessions.revoke(
                     claims.session_id, now, "logout_current"
@@ -409,6 +420,12 @@ class EmailSessionService:
                 session = unit.refresh_sessions.get_for_update(claims.session_id)
                 if session is None or session.user_account_id != claims.account_id:
                     raise AccessTokenInvalidError("Access token is invalid")
+                account = unit.accounts.get_for_update(claims.account_id)
+                if session.revoked_at is not None:
+                    return
+                if (claims.authentication_epoch != session.authentication_epoch
+                        or not self._active(session, account, now)):
+                    raise AccessTokenInvalidError("Access token is invalid")
                 changed = unit.refresh_sessions.revoke_all_for_account(
                     claims.account_id, now, "logout_all"
                 )
@@ -424,6 +441,7 @@ class EmailSessionService:
         return bool(
             account is not None
             and account.status is AccountStatus.ACTIVE
+            and account.email_verified_at is not None
             and account.authentication_epoch == session.authentication_epoch
             and session.revoked_at is None
             and now < session.expires_at

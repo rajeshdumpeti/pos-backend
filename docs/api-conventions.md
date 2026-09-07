@@ -96,7 +96,7 @@ Current stable codes are:
 | `verification_attempts_exceeded` | `429` | Five attempts were consumed |
 | `resend_cooldown_active` | `429` | Backend resend cooldown remains active |
 | `account_already_exists` | `409` | Mailbox ownership proved for an existing account |
-| `rate_limited` | `429` | Reserved for a separately approved general rate limit |
+| `rate_limited` | `429` | Authentication admission cooldown (07-08) |
 | `dependency_unavailable` | `503` | Required persistence/cryptographic dependency is unavailable |
 | `invalid_credentials` | `401` | Email or password is invalid without revealing account existence |
 | `email_not_verified` | `403` | Correct credentials require completion of email verification |
@@ -176,3 +176,16 @@ logic is introduced by this foundation.
 - Frontend changes must consume stable error codes, tolerate additive optional
   response fields, treat cursors as opaque, and report request IDs without
   attaching sensitive user data.
+
+
+## Milestone 07-08 additions
+
+Authentication errors and successes always use no-store/no-cache. All auth
+operations can return admission/input failures documented in generated OpenAPI;
+429 rate_limited includes bounded Retry-After except privacy-safe Forgot Password
+suppression, which remains generic 202. 413 request_too_large and 415
+unsupported_media_type are additive. Authentication validation details are empty
+so unexpected JSON property names cannot reflect sensitive material. Success
+schemas and operation IDs are unchanged. See
+[security policy](authentication-security-hardening.md) and
+[frontend handoff](frontend-auth-security-handoff.md).

@@ -226,6 +226,28 @@ class SecurityEventRecord:
     sanitized_metadata: dict[str, Any] = field(default_factory=dict, repr=False)
 
 
+    def __post_init__(self) -> None:
+        import re
+        allowed = {
+            "email_sign_in_succeeded", "refresh_token_rotated", "refresh_token_replayed",
+            "session_logged_out", "all_sessions_logged_out", "registration_accepted",
+            "unverified_email_change_accepted", "email_verification_resend_accepted",
+            "email_verification_rejected", "existing_account_ownership_proved",
+            "email_verification_succeeded", "password_reset_succeeded", "password_reset_requested",
+        }
+        if self.event_type not in allowed:
+            raise ValueError("Security event type is not approved")
+        if self.request_id is not None and not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", self.request_id):
+            raise ValueError("Security event request ID is invalid")
+        if any(value is not None and not isinstance(value, UUID)
+               for value in (self.id, self.user_account_id, self.refresh_session_id)):
+            raise ValueError("Security event identifier is invalid")
+        if self.source_digest is not None and not re.fullmatch(r"[a-f0-9]{64}", self.source_digest):
+            raise ValueError("Security event source is invalid")
+        if self.sanitized_metadata not in ({}, {"category": "invalid_code"}):
+            raise ValueError("Security event metadata is not approved")
+
+
 @dataclass(frozen=True, slots=True)
 class AuthenticationEmailOutboxRecord:
     id: UUID

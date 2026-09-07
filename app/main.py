@@ -8,6 +8,9 @@ from app.application.email_registration import EmailRegistrationService
 from app.application.session_lifecycle import EmailSessionService
 from app.application.password_recovery import PasswordRecoveryService
 from app.config import Settings, load_settings
+from app.core.authentication_security import AuthenticationSecurityMiddleware
+from app.infrastructure.authentication.abuse_control import compose_admission
+from app.infrastructure.authentication.registration import SafeAuthenticationEventLogger
 from app.core import configure_cors, configure_request_ids
 from app.infrastructure import (
     InMemoryResourceStore,
@@ -33,6 +36,10 @@ def create_app(
     resolved_settings = app_settings if app_settings is not None else load_settings()
     application = FastAPI(title="POS Local Mock API", version="0.1.0")
 
+    admission, close_admission = compose_admission(resolved_settings)
+    application.add_event_handler("shutdown", close_admission)
+    application.add_middleware(AuthenticationSecurityMiddleware, admission=admission,
+        settings=resolved_settings, diagnostic=SafeAuthenticationEventLogger())
     configure_cors(application, resolved_settings)
     configure_request_ids(application)
     register_exception_handlers(application)

@@ -53,7 +53,28 @@ class JwtAccessTokenCodec:
         return jwt.encode(payload, self._signing_key, algorithm=self._ALGORITHM), expires_at
 
     def verify(self, token: str, *, now: datetime) -> AccessTokenClaims:
+        if not isinstance(token, str) or len(token) > 4096:
+            raise AccessTokenInvalidError("Access token is invalid")
         try:
+            # Reject duplicate JSON members before the maintained verifier sees
+            # them; JSON last-member-wins semantics are ambiguous for claims.
+            def unique(pairs):
+                result = {}
+                for name, value in pairs:
+                    if name in result:
+                        raise ValueError("Ambiguous token")
+                    result[name] = value
+                return result
+            parts = token.split('.')
+            if len(parts) != 3:
+                raise ValueError("Invalid token")
+            for part in parts[:2]:
+                parsed = json.loads(jwt.utils.base64url_decode(part), object_pairs_hook=unique)
+                if not isinstance(parsed, dict):
+                    raise ValueError("Invalid token")
+            header = jwt.get_unverified_header(token)
+            if header.get("typ") != "JWT" or set(header) != {"alg", "typ"}:
+                raise ValueError("Invalid token")
             payload = jwt.decode(
                 token,
                 self._signing_key,
@@ -62,14 +83,25 @@ class JwtAccessTokenCodec:
                 audience=self._audience,
                 options={
                     "require": ["exp", "iat", "nbf", "iss", "aud", "sub", "sid", "jti", "typ", "aep"],
+                    "strict_aud": True,
                     "verify_exp": False,
                     "verify_iat": False,
                     "verify_nbf": False,
                 },
             )
-            issued_at = datetime.fromtimestamp(int(payload["iat"]), timezone.utc)
+            if any(type(payload[name]) is not int for name in ("iat", "nbf", "exp", "aep")):
+                raise ValueError("Invalid token")
+            if any(type(payload[name]) is not str for name in ("sub", "sid", "jti")):
+                raise ValueError("Invalid token")
+            for name in ("sub", "sid", "jti"):
+                if str(UUID(payload[name])) != payload[name] or UUID(payload[name]).int == 0:
+                    raise ValueError("Invalid token")
+            issued_at = datetime.fromtimestamp(payload["iat"], timezone.utc)
             not_before = datetime.fromtimestamp(int(payload["nbf"]), timezone.utc)
             expires_at = datetime.fromtimestamp(int(payload["exp"]), timezone.utc)
+            if (expires_at <= issued_at or not_before != issued_at
+                    or expires_at - issued_at != self._policy.access_lifetime):
+                raise ValueError("Invalid token")
             if now >= expires_at:
                 raise AccessTokenExpiredError("Access token expired")
             if payload["typ"] != "access" or now < not_before or now < issued_at:
@@ -82,8 +114,8 @@ class JwtAccessTokenCodec:
                 RefreshSessionId(UUID(str(payload["sid"]))),
                 epoch,
             )
-        except (InvalidTokenError, KeyError, TypeError, ValueError) as error:
-            raise AccessTokenInvalidError("Access token is invalid") from error
+        except (InvalidTokenError, KeyError, TypeError, ValueError, OverflowError, OSError, RecursionError):
+            raise AccessTokenInvalidError("Access token is invalid") from None
 
 
 class OpaqueRefreshTokenGenerator:
@@ -151,4 +183,4 @@ class AesGcmRefreshReceiptCipher(RefreshReceiptCipher):
                 onboarding_required=bool(data["onboarding_required"]),
             )
         except (InvalidTag, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
-            raise SessionInternalError("Refresh retry receipt is unavailable") from error
+            raise SessionInternalError("Refresh retry receipt is unavailable") from None

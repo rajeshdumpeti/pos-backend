@@ -66,7 +66,7 @@ Activate the existing environment, then start the development server:
 
 ```bash
 source .venv/bin/activate
-python -m uvicorn app.main:app --reload --port 8000 --env-file .env
+python -m uvicorn app.main:app --reload --port 8000 --no-proxy-headers --no-access-log --no-server-header --env-file .env
 ```
 
 On Windows PowerShell, activate with `.venv\Scripts\Activate.ps1`; the server
@@ -199,3 +199,13 @@ The implemented migration structure, offline validation commands, review rules,
 and live-database safety gate are documented in
 [migrations](docs/migrations.md). The baseline is intentionally empty, and
 ordinary local startup and CI still require no PostgreSQL service.
+
+## Email/password security — 07-08
+
+See [authentication security hardening](docs/authentication-security-hardening.md)
+for the canonical threat model, exact admission policy, Redis/local settings,
+trusted proxies, secure server flags and guarded verification prerequisites.
+The [frontend security handoff](docs/frontend-auth-security-handoff.md) defines
+429 handling, privacy-safe states and session-expired navigation requirements.
+Google, Apple and biometrics are deferred to a later MVP. 07-09 remains the final
+authentication contract and release-handoff milestone.

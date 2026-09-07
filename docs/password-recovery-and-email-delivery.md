@@ -1,5 +1,8 @@
 # Password recovery and authentication email delivery
 
+Current security policy: [Milestone 07-08](authentication-security-hardening.md).
+Earlier deferred-control notes below describe the milestone at its original delivery.
+
 ## Boundaries
 
 The HTTP layer validates and maps requests. `PasswordRecoveryService` owns the
