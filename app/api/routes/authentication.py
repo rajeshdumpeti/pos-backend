@@ -47,13 +47,15 @@ from app.application.password_recovery import (
 
 def _responses(*status_codes: int) -> dict[int, dict[str, Any]]:
     descriptions = {
-        400: "The password, flow, or verification code was rejected.",
+        400: "The password, flow, verification code, or HTTP input was rejected.",
+        413: "The authentication request is too large.",
+        415: "The authentication request must use JSON.",
         401: "Authentication credentials are invalid or expired.",
         403: "The account cannot establish a session.",
         409: "Email ownership was proved for an existing account.",
         410: "The verification code or flow expired.",
         422: "The request or legal acceptance could not be validated.",
-        429: "Verification attempts or the resend cooldown were exceeded.",
+        429: "Authentication admission, verification attempts, or resend cooldown was exceeded.",
         500: "An unexpected safe internal failure occurred.",
         503: "A required persistence or cryptographic dependency is unavailable.",
     }
@@ -62,13 +64,14 @@ def _responses(*status_codes: int) -> dict[int, dict[str, Any]]:
             "description": descriptions[code],
             "model": AuthenticationErrorResponse,
             "headers": {
+                "Retry-After": {"description": "Bounded delay in seconds when throttled.", "schema": {"type": "integer", "minimum": 1, "maximum": 3600}},
                 REQUEST_ID_HEADER: {
                     "description": "Request identifier for support and diagnostics.",
                     "schema": {"type": "string"},
                 }
             },
         }
-        for code in status_codes
+        for code in sorted(set(status_codes) | {400, 401, 413, 415, 422, 429})
     }
 
 

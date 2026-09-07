@@ -24,7 +24,8 @@ class RequestIdMiddleware(BaseHTTPMiddleware):
     async def dispatch(
         self, request: Request, call_next: RequestResponseEndpoint
     ) -> Response:
-        request_id = _resolve_request_id(request.headers.get(REQUEST_ID_HEADER))
+        candidates = request.headers.getlist(REQUEST_ID_HEADER)
+        request_id = _resolve_request_id(candidates[0] if len(candidates) == 1 else None)
         request.state.request_id = request_id
         response = await call_next(request)
         response.headers[REQUEST_ID_HEADER] = request_id

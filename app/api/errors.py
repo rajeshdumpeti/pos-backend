@@ -136,7 +136,8 @@ async def _handle_domain_error(request: Request, error: Exception) -> JSONRespon
 async def _handle_validation_error(
     request: Request, error: RequestValidationError
 ) -> JSONResponse:
-    details = [_validation_detail(error_detail) for error_detail in error.errors()]
+    details = ([] if request.url.path.startswith("/api/v1/auth") else
+               [_validation_detail(error_detail) for error_detail in error.errors()])
     return _error_response(
         request,
         status.HTTP_422_UNPROCESSABLE_ENTITY,

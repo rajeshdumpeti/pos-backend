@@ -6,6 +6,8 @@ import hmac
 import json
 import logging
 import secrets
+import re
+from uuid import UUID
 from typing import Never
 
 from argon2 import PasswordHasher
@@ -65,15 +67,19 @@ class Argon2idPasswordHasher:
         )
 
     def hash(self, password: str) -> str:
+        if not 1 <= len(password) <= 1024:
+            raise AuthenticationCryptographyError("Password length is invalid")
         try:
             return self._hasher.hash(password)
         except HashingError as error:
             _raise_crypto_error("Password hashing failed", error)
 
     def verify(self, password_hash: str, password: str) -> bool:
+        if not 1 <= len(password) <= 1024:
+            return False
         try:
             return self._hasher.verify(password_hash, password)
-        except VerificationError:
+        except (VerificationError, InvalidHashError):
             return False
 
     def needs_rehash(self, password_hash: str) -> bool:
@@ -338,20 +344,25 @@ class SafeAuthenticationEventLogger:
         challenge_id: object | None = None,
         session_id: object | None = None,
     ) -> None:
-        LOGGER.info(
-            event,
-            extra={
-                "operation": operation,
-                "outcome": outcome,
-                "request_id": request_id,
-                "error_category": error_category,
-                "account_id": None if account_id is None else str(account_id),
-                "challenge_id": None
-                if challenge_id is None
-                else str(challenge_id),
-                "session_id": None if session_id is None else str(session_id),
-            },
-        )
+        def label(value):
+            return value if value in _SAFE_DIAGNOSTIC_LABELS else "redacted"
+        def identifier(value):
+            return str(value) if isinstance(value, UUID) else None
+        safe_request_id = request_id if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", request_id) else "redacted"
+        try:
+            LOGGER.log(logging.WARNING if event == "authentication_configuration_unavailable" else logging.INFO, label(event), extra={
+                "operation": label(operation), "outcome": label(outcome),
+                "request_id": safe_request_id,
+                ("category" if event == "authentication_configuration_unavailable" else "error_category"): None if error_category is None else label(error_category),
+                **({} if event == "authentication_configuration_unavailable" else {
+                    "account_id": identifier(account_id), "challenge_id": identifier(challenge_id),
+                    "session_id": identifier(session_id),
+                }),
+            })
+        except Exception:
+            # Post-commit/rejection diagnostics cannot change the public outcome.
+            pass
+
 
 
 class SafeAuthenticationAvailabilityDiagnostic:
@@ -360,15 +371,10 @@ class SafeAuthenticationAvailabilityDiagnostic:
     def emit_configuration_incomplete(
         self, *, operation: str, request_id: str
     ) -> None:
-        LOGGER.warning(
-            "authentication_configuration_unavailable",
-            extra={
-                "operation": operation,
-                "outcome": "unavailable",
-                "category": "configuration_incomplete",
-                "request_id": request_id,
-            },
-        )
+        SafeAuthenticationEventLogger().emit(
+            event="authentication_configuration_unavailable", operation=operation,
+            outcome="unavailable", error_category="configuration_incomplete", request_id=request_id)
+
 
 
 def encode_key_for_local_generation(key: bytes) -> str:
@@ -380,3 +386,138 @@ def _parse_datetime(value: str):
     from datetime import datetime
 
     return datetime.fromisoformat(value)
+
+
+_SAFE_DIAGNOSTIC_LABELS = frozenset({
+    'AccessTokenExpiredError',
+    'AccessTokenInvalidError',
+    'AccountAlreadyExistsError',
+    'AccountUnavailableError',
+    'AuthenticationCryptographyError',
+    'AuthenticationRequiredError',
+    'EmailNotVerifiedError',
+    'InvalidCredentialsError',
+    'PasswordRecoveryDependencyUnavailableError',
+    'PasswordRecoveryError',
+    'PasswordRecoveryInternalError',
+    'PasswordRejectedError',
+    'RefreshSessionExpiredError',
+    'RefreshSessionInvalidError',
+    'RefreshSessionReplayedError',
+    'RegistrationDependencyUnavailableError',
+    'RegistrationInputRejectedError',
+    'RegistrationInternalError',
+    'RegistrationVerificationError',
+    'ResendCooldownActiveError',
+    'ResetPasswordRejectedError',
+    'ResetTokenExpiredError',
+    'ResetTokenInvalidError',
+    'SessionDependencyUnavailableError',
+    'SessionInternalError',
+    'SessionLifecycleError',
+    'VerificationAttemptsExceededError',
+    'VerificationCodeExpiredError',
+    'VerificationCodeInvalidError',
+    'VerificationFlowExpiredError',
+    'VerificationFlowInvalidError',
+
+    'accepted',
+    'access_token_rejected',
+    'account_unavailable',
+    'all',
+    'all_sessions_logged_out',
+    'already_revoked',
+    'approved_retry',
+    'ascii',
+    'authentication_admission_rejected',
+    'authentication_configuration_unavailable',
+    'authentication_internal_failure',
+    'authentication_operation',
+    'authentication_required',
+    'authentication_transaction',
+    'authorization',
+    'await_session_establishment',
+    'body',
+    'category',
+    'change_email',
+    'change_unverified_email',
+    'concurrency',
+    'configuration_incomplete',
+    'cryptography',
+    'current_session',
+    'dependency',
+    'dependency_unavailable',
+    'email',
+    'email_not_verified',
+    'email_sign_in',
+    'email_sign_in_failed',
+    'email_sign_in_succeeded',
+    'email_verification',
+    'email_verification_rejected',
+    'email_verification_resend_accepted',
+    'email_verification_succeeded',
+    'email_verified',
+    'existing_account_ownership_proved',
+    'failed',
+    'flow_token',
+    'forwarded',
+    'global',
+    'headers',
+    'http',
+    'identity',
+    'instructions_if_eligible',
+    'internal',
+    'internal_error',
+    'internal_server_error',
+    'invalid_access_token',
+    'invalid_code',
+    'invalid_credentials',
+    'logout',
+    'logout_all',
+    'logout_current',
+    'method',
+    'more_body',
+    'new_email',
+    'outbox_encryption',
+    'password_reset',
+    'password_reset_confirm',
+    'password_reset_request',
+    'password_reset_requested',
+    'password_reset_succeeded',
+    'path',
+    'query_string',
+    'rate_limited',
+    'redacted',
+    'refresh',
+    'refresh_replay',
+    'refresh_retry_succeeded',
+    'refresh_session',
+    'refresh_token',
+    'refresh_token_replayed',
+    'refresh_token_rotated',
+    'registration',
+    'registration_accepted',
+    'registration_pending',
+    'rejected',
+    'replay',
+    'request_id',
+    'request_too_large',
+    'request_validation_failed',
+    'restore',
+    'revoked',
+    'rolled_back',
+    'search',
+    'session_logged_out',
+    'session_restored',
+    'sign_in',
+    'status',
+    'succeeded',
+    'suppressed',
+    'token',
+    'type',
+    'unavailable',
+    'unsupported_media_type',
+    'unverified_email_change_accepted',
+    'verification_confirm',
+    'verification_resend',
+})

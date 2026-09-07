@@ -1,5 +1,8 @@
 # Email registration and verification
 
+Current security policy: [Milestone 07-08](authentication-security-hardening.md).
+Earlier deferred-control notes below describe the milestone at its original delivery.
+
 Milestone 07-03 introduces POS's first public authentication capability. It is
 limited to account registration and proof of email ownership. Sign-in, session
 creation, JWTs, password recovery, social providers, biometrics, and production

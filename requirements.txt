@@ -10,3 +10,4 @@ argon2-cffi==25.1.0
 email-validator==2.3.0
 cryptography==50.0.1
 PyJWT==2.13.0
+redis==6.4.0
