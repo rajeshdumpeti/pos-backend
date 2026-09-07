@@ -32,8 +32,10 @@ other values fail at application creation with an actionable error.
 
 PostgreSQL and registration keys remain optional for mock-only local startup.
 Email registration is composed only when the database, both keys, and current
-legal versions are all configured. Staging and production require that complete
-set. Redis and JWT remain unused and optional.
+legal versions are all configured. Email sessions are composed only when the
+database, JWT signing secret, and refresh-receipt encryption key are configured.
+Staging and production require the complete registration and session set. Redis
+remains unused and optional.
 
 ## Local `.env`
 
@@ -57,6 +59,8 @@ and the server may be started without `--env-file .env`.
 | `DATABASE_URL` | unset         | Optional            | PostgreSQL URL when supplied |
 | `REDIS_URL`    | unset         | Optional            | Redis or TLS Redis URL when supplied |
 | `JWT_SECRET`   | unset         | Optional            | At least 32 characters when supplied |
+| `AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY` | unset | Required for sessions/protected environments | Separate URL-safe base64 256-bit key |
+| `AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY_ID` / `_VERSION` | named ID / `1` | Optional metadata | ID 1–64 characters; version positive |
 | `AUTH_CHALLENGE_DIGEST_KEY` | unset | Required for registration/protected environments | URL-safe base64 256-bit key |
 | `AUTH_CHALLENGE_DIGEST_KEY_ID` / `_VERSION` | named ID / `1` | Optional metadata | ID 1–64 characters; version positive |
 | `AUTH_OUTBOX_ENCRYPTION_KEY` | unset | Required for registration/protected environments | Separate URL-safe base64 256-bit key |

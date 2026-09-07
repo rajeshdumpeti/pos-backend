@@ -20,6 +20,8 @@ def test_example_environment_keeps_registration_secrets_and_local_access_safe():
 
     assert values["AUTH_CHALLENGE_DIGEST_KEY"] == ""
     assert values["AUTH_OUTBOX_ENCRYPTION_KEY"] == ""
+    assert values["JWT_SECRET"] == ""
+    assert values["AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY"] == ""
     assert values["CURRENT_TERMS_VERSION"] == ""
     assert values["CURRENT_PRIVACY_VERSION"] == ""
     assert values["AUTH_LOCAL_EMAIL_INSPECTION_ENABLED"] == "false"

@@ -25,6 +25,20 @@ from app.application.email_registration import (
     VerificationFlowInvalidError,
 )
 from app.core import REQUEST_ID_HEADER, get_request_id
+from app.application.session_lifecycle import (
+    AccessTokenInvalidError,
+    AccessTokenExpiredError,
+    AuthenticationRequiredError,
+    AccountUnavailableError,
+    EmailNotVerifiedError,
+    InvalidCredentialsError,
+    RefreshSessionInvalidError,
+    RefreshSessionExpiredError,
+    RefreshSessionReplayedError,
+    SessionDependencyUnavailableError,
+    SessionInternalError,
+    SessionLifecycleError,
+)
 from app.domain import (
     ItemNotFoundError,
     ResourceMutationNotAllowedError,
@@ -81,6 +95,7 @@ def register_exception_handlers(application: FastAPI) -> None:
     application.add_exception_handler(
         RegistrationVerificationError, _handle_registration_error
     )
+    application.add_exception_handler(SessionLifecycleError, _handle_session_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(StarletteHTTPException, _handle_http_error)
     application.add_exception_handler(Exception, _handle_unexpected_error)
@@ -190,6 +205,40 @@ async def _handle_registration_error(
     return _error_response(
         request, 500, "internal_server_error", "An unexpected error occurred"
     )
+
+
+async def _handle_session_error(
+    request: Request, error: SessionLifecycleError
+) -> JSONResponse:
+    if isinstance(error, InvalidCredentialsError):
+        return _error_response(request, 401, "invalid_credentials", "Email or password is invalid")
+    if isinstance(error, EmailNotVerifiedError):
+        return _error_response(
+            request,
+            403,
+            "email_not_verified",
+            "Email verification is required",
+            actions=["verify_email"],
+        )
+    if isinstance(error, AccountUnavailableError):
+        return _error_response(request, 403, "account_unavailable", "Account is unavailable")
+    if isinstance(error, AuthenticationRequiredError):
+        return _error_response(request, 401, "authentication_required", "Authentication is required")
+    if isinstance(error, AccessTokenExpiredError):
+        return _error_response(request, 401, "access_token_expired", "Access token expired")
+    if isinstance(error, AccessTokenInvalidError):
+        return _error_response(request, 401, "access_token_invalid", "Access token is invalid")
+    if isinstance(error, RefreshSessionExpiredError):
+        return _error_response(request, 401, "refresh_session_expired", "Refresh session expired")
+    if isinstance(error, RefreshSessionInvalidError):
+        return _error_response(request, 401, "refresh_session_invalid", "Refresh session is invalid")
+    if isinstance(error, RefreshSessionReplayedError):
+        return _error_response(request, 409, "refresh_session_replayed", "Refresh session replay was detected")
+    if isinstance(error, SessionDependencyUnavailableError):
+        return _error_response(request, 503, "dependency_unavailable", "A required dependency is unavailable")
+    if isinstance(error, SessionInternalError):
+        return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
+    return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
 
 
 async def _handle_http_error(

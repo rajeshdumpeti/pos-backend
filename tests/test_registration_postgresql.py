@@ -5,8 +5,6 @@ from datetime import UTC, datetime, timedelta
 import hashlib
 import os
 
-from alembic import command
-from alembic.config import Config
 from pydantic import SecretStr
 import pytest
 from sqlalchemy import func, select, text
@@ -49,6 +47,7 @@ from app.infrastructure.authentication.unit_of_work import (
 )
 from app.infrastructure.database import create_database_engine, dispose_database_engine
 from app.infrastructure.relational import RELATIONAL_METADATA
+from tests.postgresql_support import upgrade_test_database
 
 
 TEST_URL = os.environ.get("POS_TEST_DATABASE_URL")
@@ -84,7 +83,7 @@ class FailingCipher:
 @pytest.fixture(scope="module")
 def engine():
     assert TEST_URL is not None
-    command.upgrade(Config("alembic.ini"), "head")
+    upgrade_test_database(TEST_URL)
     value = create_database_engine(SecretStr(TEST_URL))
     try:
         yield value

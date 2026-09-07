@@ -87,3 +87,7 @@ SQLAlchemy metadata and Alembic; Milestone 07-02 applies the standards through
 [`authentication-persistence.md`](authentication-persistence.md). The resulting metadata ownership, migration graph,
 and offline validation workflow are defined in
 [`migrations.md`](migrations.md).
+
+Email sign-in, JWT validation, refresh rotation/retry, and logout are orchestrated
+by the application layer and documented in
+[`email-sign-in-session-lifecycle.md`](email-sign-in-session-lifecycle.md).

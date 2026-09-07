@@ -251,6 +251,7 @@ class SafeAuthenticationEventLogger:
         error_category: str | None = None,
         account_id: object | None = None,
         challenge_id: object | None = None,
+        session_id: object | None = None,
     ) -> None:
         LOGGER.info(
             event,
@@ -263,6 +264,7 @@ class SafeAuthenticationEventLogger:
                 "challenge_id": None
                 if challenge_id is None
                 else str(challenge_id),
+                "session_id": None if session_id is None else str(session_id),
             },
         )
 

@@ -18,6 +18,11 @@ support mobile UI development but do not define the final production API.
 | `POST` | `/api/v1/auth/email-verifications/confirm` | `201` | `EmailVerifiedResponse` | `400`, `409`, `410`, `422`, `429`, `500`, `503` | Authentication | `confirm_email_verification` |
 | `POST` | `/api/v1/auth/email-verifications/resend` | `202` | `PendingVerificationResponse` | `400`, `410`, `422`, `429`, `500`, `503` | Authentication | `resend_email_verification` |
 | `PATCH` | `/api/v1/auth/email-verifications/email` | `202` | `PendingVerificationResponse` | `400`, `410`, `422`, `429`, `500`, `503` | Authentication | `change_unverified_email` |
+| `POST` | `/api/v1/auth/sessions` | `200` | `SessionTokenResponse` | `401`, `403`, `500`, `503` | Authentication | `create_email_session` |
+| `POST` | `/api/v1/auth/sessions/refresh` | `200` | `SessionTokenResponse` | `401`, `409`, `500`, `503` | Authentication | `refresh_email_session` |
+| `GET` | `/api/v1/auth/session` | `200` | `CurrentSessionResponse` | `401`, `500`, `503` | Authentication | `get_current_session` |
+| `DELETE` | `/api/v1/auth/session` | `204` | No body | `401`, `500`, `503` | Authentication | `delete_current_session` |
+| `DELETE` | `/api/v1/auth/sessions` | `204` | No body | `401`, `500`, `503` | Authentication | `delete_all_sessions` |
 
 `/docs` and `/openapi.json` remain local framework endpoints. The dynamic mock
 routes intentionally retain their existing unversioned paths and fixture shapes.
@@ -93,6 +98,15 @@ Current stable codes are:
 | `account_already_exists` | `409` | Mailbox ownership proved for an existing account |
 | `rate_limited` | `429` | Reserved for a separately approved general rate limit |
 | `dependency_unavailable` | `503` | Required persistence/cryptographic dependency is unavailable |
+| `invalid_credentials` | `401` | Email or password is invalid without revealing account existence |
+| `email_not_verified` | `403` | Correct credentials require completion of email verification |
+| `account_unavailable` | `403` | Account state does not permit session creation |
+| `authentication_required` | `401` | Bearer access credentials are missing |
+| `access_token_invalid` | `401` | Access token is malformed, tampered, or otherwise invalid |
+| `access_token_expired` | `401` | Access token lifetime ended |
+| `refresh_session_invalid` | `401` | Refresh session is malformed, unknown, or revoked |
+| `refresh_session_expired` | `401` | Absolute refresh-session lifetime ended |
+| `refresh_session_replayed` | `409` | Refresh-token reuse revoked the token family |
 
 Domain errors remain framework-independent. The API boundary maps them to
 status codes and error codes. Validation details contain only `field`, `code`,

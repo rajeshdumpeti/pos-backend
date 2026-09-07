@@ -37,6 +37,8 @@ def test_supported_environment_names_are_normalized(
                 "DATABASE_URL": "postgresql://fake-user:fake-password@localhost/pos",
                 "AUTH_CHALLENGE_DIGEST_KEY": "eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg",
                 "AUTH_OUTBOX_ENCRYPTION_KEY": "eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXk",
+                "JWT_SECRET": "fake-jwt-secret-that-is-at-least-32-characters",
+                "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY": "enp6enp6enp6enp6enp6enp6enp6enp6enp6enp6eno",
                 "CURRENT_TERMS_VERSION": "terms-test-v1",
                 "CURRENT_PRIVACY_VERSION": "privacy-test-v1",
             }
