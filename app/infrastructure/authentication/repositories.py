@@ -158,6 +158,23 @@ class SqlAlchemyUserAccountRepository:
             )
         return result.rowcount == 1
 
+    def update_password_hash(
+        self, account_id: AccountId, password_hash: str, updated_at: datetime
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(UserAccountModel)
+                .where(UserAccountModel.id == account_id)
+                .values(password_hash=password_hash, updated_at=updated_at)
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
+
 
 class SqlAlchemyEmailIdentityRepository:
     def __init__(self, session: Session) -> None:
@@ -472,6 +489,17 @@ class SqlAlchemyRefreshSessionRepository:
         )
         return None if model is None else _refresh_record(model)
 
+    def get_for_update(
+        self, session_id: RefreshSessionId
+    ) -> RefreshSessionRecord | None:
+        model = _execute_one(
+            self._session,
+            select(RefreshSessionModel)
+            .where(RefreshSessionModel.id == session_id)
+            .with_for_update(),
+        )
+        return None if model is None else _refresh_record(model)
+
     def list_family(self, token_family_id: UUID) -> Sequence[RefreshSessionRecord]:
         try:
             models = self._session.scalars(
@@ -517,6 +545,44 @@ class SqlAlchemyRefreshSessionRepository:
             )
         return result.rowcount == 1
 
+    def revoke(
+        self, session_id: RefreshSessionId, revoked_at: datetime, reason: str
+    ) -> bool:
+        return self._revoke_where(
+            RefreshSessionModel.id == session_id, revoked_at, reason
+        ) == 1
+
+    def revoke_family(
+        self, token_family_id: UUID, revoked_at: datetime, reason: str
+    ) -> int:
+        return self._revoke_where(
+            RefreshSessionModel.token_family_id == token_family_id,
+            revoked_at,
+            reason,
+        )
+
+    def revoke_all_for_account(
+        self, account_id: AccountId, revoked_at: datetime, reason: str
+    ) -> int:
+        return self._revoke_where(
+            RefreshSessionModel.user_account_id == account_id, revoked_at, reason
+        )
+
+    def _revoke_where(self, predicate: object, revoked_at: datetime, reason: str) -> int:
+        try:
+            result = self._session.execute(
+                update(RefreshSessionModel)
+                .where(predicate, RefreshSessionModel.revoked_at.is_(None))
+                .values(revoked_at=revoked_at, revocation_reason=reason)
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount
+
 
 class SqlAlchemyRefreshRotationReceiptRepository:
     def __init__(self, session: Session) -> None:
@@ -538,6 +604,20 @@ class SqlAlchemyRefreshRotationReceiptRepository:
                 == refresh_request_id,
                 RefreshRotationRetryReceiptModel.expires_at > now,
             ),
+        )
+        return None if model is None else _receipt_record(model)
+
+    def get_by_previous_digest_for_update(
+        self, previous_token_digest: str
+    ) -> RefreshRotationReceiptRecord | None:
+        model = _execute_one(
+            self._session,
+            select(RefreshRotationRetryReceiptModel)
+            .where(
+                RefreshRotationRetryReceiptModel.previous_token_digest
+                == previous_token_digest
+            )
+            .with_for_update(),
         )
         return None if model is None else _receipt_record(model)
 

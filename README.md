@@ -9,7 +9,7 @@ architecture.
 - Python 3.12.x
 - FastAPI, Pydantic, and email-validator
 - SQLAlchemy 2.x and Psycopg 3 data-access foundation
-- Argon2id password hashing and AES-GCM authentication-email encryption
+- Argon2id password hashing, PyJWT access tokens, and AES-GCM authentication encryption
 - Uvicorn
 - pytest and HTTPX
 
@@ -152,7 +152,9 @@ setup script would duplicate them without adding a stable prerequisite check.
 Generic mock API mutations remain in memory and reset when the server restarts.
 Email registration is composed only when its complete PostgreSQL, key, and
 legal-version configuration is present; partial configuration never selects an
-ambiguous adapter. Application import, health, Swagger, and the mock endpoints
+ambiguous adapter. Email sessions are independently composed only when
+PostgreSQL, JWT signing, and refresh-receipt encryption are configured.
+Application import, health, Swagger, and the mock endpoints
 still require no PostgreSQL, Redis, authentication secret, or cloud service.
 The development CORS policy must not be treated as production configuration.
 
@@ -179,6 +181,9 @@ lifecycle, encrypted outbox, and operational diagnosis are documented in
 [email registration and verification](docs/email-registration-verification.md).
 The mobile integration contract and UX-state mapping are in the
 [frontend registration handoff](docs/frontend-auth-registration-handoff.md).
+Email sign-in, rotating refresh sessions, logout, and the draft mobile contract
+are documented in [session lifecycle](docs/email-sign-in-session-lifecycle.md)
+and [frontend session handoff](docs/frontend-auth-session-handoff.md).
 
 The implemented migration structure, offline validation commands, review rules,
 and live-database safety gate are documented in

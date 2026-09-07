@@ -5,9 +5,7 @@ from datetime import UTC, datetime, timedelta
 import os
 from uuid import uuid4
 
-from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
 from pydantic import SecretStr
 import pytest
@@ -16,17 +14,25 @@ from sqlalchemy.exc import IntegrityError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
 from app.application import PersistenceUnavailableError
-from app.domain.authentication import AccountId, AccountStatus, EmailIdentityRecord, UserAccountRecord
+from app.domain.authentication import (
+    AccountId,
+    AccountStatus,
+    EmailIdentityRecord,
+    RefreshSessionId,
+    UserAccountRecord,
+)
 from app.infrastructure.authentication.models import (
     AuthenticationAttemptStateModel,
     AuthenticationEmailOutboxModel,
     EmailIdentityModel,
     ExternalProviderIdentityModel,
+    RefreshSessionModel,
     UserAccountModel,
 )
 from app.infrastructure.authentication.unit_of_work import SqlAlchemyAuthenticationUnitOfWork
 from app.infrastructure.database import create_database_engine, dispose_database_engine
 from app.infrastructure.relational import RELATIONAL_METADATA
+from tests.postgresql_support import upgrade_test_database
 
 
 TEST_URL = os.environ.get("POS_TEST_DATABASE_URL")
@@ -40,7 +46,7 @@ def engine():
     value = create_database_engine(SecretStr(TEST_URL))
     try:
         try:
-            command.upgrade(Config("alembic.ini"), "head")
+            upgrade_test_database(TEST_URL)
         except (PersistenceUnavailableError, SQLAlchemyError):
             pytest.fail(
                 "Authorized PostgreSQL test database is unavailable",
@@ -201,3 +207,65 @@ def test_outbox_skip_locked_claims_are_disjoint(engine):
     assert batches[0].isdisjoint(batches[1])
     with engine.begin() as connection:
         connection.execute(AuthenticationEmailOutboxModel.__table__.delete().where(AuthenticationEmailOutboxModel.id.in_(outbox_ids)))
+
+
+def test_refresh_rotation_has_one_concurrent_winner_and_logout_is_idempotent(engine):
+    account_id = AccountId(uuid4())
+    session_id = RefreshSessionId(uuid4())
+    family_id = uuid4()
+    with engine.begin() as connection:
+        connection.execute(
+            UserAccountModel.__table__.insert().values(
+                id=account_id,
+                status="active",
+                display_name="Session Race",
+                password_hash="$argon2id$fixture",
+                email_verified_at=NOW,
+                onboarding_required=True,
+                authentication_epoch=0,
+                created_at=NOW,
+                updated_at=NOW,
+            )
+        )
+        connection.execute(
+            RefreshSessionModel.__table__.insert().values(
+                id=session_id,
+                user_account_id=account_id,
+                token_family_id=family_id,
+                current_token_digest="original-digest-" + str(uuid4()),
+                remember_me=False,
+                authentication_epoch=0,
+                device_metadata={},
+                created_at=NOW,
+                last_used_at=NOW,
+                expires_at=NOW + timedelta(days=7),
+            )
+        )
+    with engine.connect() as connection:
+        original = connection.scalar(
+            select(RefreshSessionModel.current_token_digest).where(
+                RefreshSessionModel.id == session_id
+            )
+        )
+
+    def rotate(index: int) -> bool:
+        factory = sessionmaker(bind=engine, expire_on_commit=False)
+        with SqlAlchemyAuthenticationUnitOfWork(factory) as unit:
+            changed = unit.refresh_sessions.replace_token(
+                session_id, original, f"replacement-{index}-{uuid4()}", NOW
+            )
+            unit.commit()
+            return changed
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        outcomes = list(pool.map(rotate, range(2)))
+    assert sorted(outcomes) == [False, True]
+
+    factory = sessionmaker(bind=engine, expire_on_commit=False)
+    with SqlAlchemyAuthenticationUnitOfWork(factory) as unit:
+        assert unit.refresh_sessions.revoke(session_id, NOW, "logout_current") is True
+        assert unit.refresh_sessions.revoke(session_id, NOW, "logout_current") is False
+        assert unit.refresh_sessions.revoke_all_for_account(account_id, NOW, "logout_all") == 0
+        unit.commit()
+    with engine.begin() as connection:
+        connection.execute(UserAccountModel.__table__.delete().where(UserAccountModel.id == account_id))

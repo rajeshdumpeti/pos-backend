@@ -32,6 +32,9 @@ class Settings(BaseModel):
     database_url: SecretStr | None = Field(default=None, repr=False)
     redis_url: SecretStr | None = Field(default=None, repr=False)
     jwt_secret: SecretStr | None = Field(default=None, repr=False)
+    auth_refresh_receipt_encryption_key: SecretStr | None = Field(default=None, repr=False)
+    auth_refresh_receipt_encryption_key_id: str = "auth-refresh-receipt"
+    auth_refresh_receipt_encryption_key_version: int = 1
     cors_origins: tuple[str, ...]
     verification_code_lifetime_seconds: int = 600
     verification_max_attempts: int = 5
@@ -208,12 +211,20 @@ def _validate_authentication_settings(settings: Settings) -> None:
     for name, value in (
         ("AUTH_CHALLENGE_DIGEST_KEY", settings.auth_challenge_digest_key),
         ("AUTH_OUTBOX_ENCRYPTION_KEY", settings.auth_outbox_encryption_key),
+        (
+            "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY",
+            settings.auth_refresh_receipt_encryption_key,
+        ),
     ):
         if value is not None:
             _decode_256_bit_key(value.get_secret_value(), name)
     for name, value in (
         ("AUTH_CHALLENGE_DIGEST_KEY_ID", settings.auth_challenge_digest_key_id),
         ("AUTH_OUTBOX_ENCRYPTION_KEY_ID", settings.auth_outbox_encryption_key_id),
+        (
+            "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY_ID",
+            settings.auth_refresh_receipt_encryption_key_id,
+        ),
     ):
         if not value or len(value) > 64:
             raise ConfigurationError(f"{name} must contain 1 to 64 characters")
@@ -230,6 +241,11 @@ def _validate_authentication_settings(settings: Settings) -> None:
                 ("DATABASE_URL", settings.database_url),
                 ("AUTH_CHALLENGE_DIGEST_KEY", settings.auth_challenge_digest_key),
                 ("AUTH_OUTBOX_ENCRYPTION_KEY", settings.auth_outbox_encryption_key),
+                ("JWT_SECRET", settings.jwt_secret),
+                (
+                    "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY",
+                    settings.auth_refresh_receipt_encryption_key,
+                ),
                 ("CURRENT_TERMS_VERSION", settings.current_terms_version),
                 ("CURRENT_PRIVACY_VERSION", settings.current_privacy_version),
             )
@@ -311,6 +327,16 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         database_url=_parse_secret_url(source, "DATABASE_URL", _DATABASE_SCHEMES),
         redis_url=_parse_secret_url(source, "REDIS_URL", _REDIS_SCHEMES),
         jwt_secret=_parse_jwt_secret(source),
+        auth_refresh_receipt_encryption_key=_parse_auth_secret(
+            source, "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY"
+        ),
+        auth_refresh_receipt_encryption_key_id=(
+            _optional_value(source, "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY_ID")
+            or "auth-refresh-receipt"
+        ),
+        auth_refresh_receipt_encryption_key_version=_parse_int(
+            source, "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY_VERSION", 1
+        ),
         cors_origins=_parse_cors_origins(source, app_environment),
         verification_code_lifetime_seconds=_parse_int(
             source, "AUTH_VERIFICATION_CODE_LIFETIME_SECONDS", 600

@@ -164,6 +164,7 @@ class AuthenticationEventLogger(Protocol):
         error_category: str | None = None,
         account_id: UUID | None = None,
         challenge_id: UUID | None = None,
+        session_id: UUID | None = None,
     ) -> None: ...
 
 

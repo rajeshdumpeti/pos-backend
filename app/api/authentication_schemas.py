@@ -146,6 +146,34 @@ class AuthenticationErrorResponse(BaseModel):
     details: list[ErrorDetail] = Field(default_factory=list)
     retry_at: datetime | None = None
     retry_after_seconds: int | None = None
-    actions: list[Literal["sign_in", "forgot_password"]] = Field(
+    actions: list[Literal["sign_in", "forgot_password", "verify_email"]] = Field(
         default_factory=list
     )
+
+
+class SignInRequest(AuthenticationRequest):
+    email: str = Field(min_length=3, max_length=320)
+    password: SecretStr = Field(min_length=1, max_length=1024, json_schema_extra={"writeOnly": True})
+    remember_me: bool = False
+
+
+class RefreshSessionRequest(AuthenticationRequest):
+    refresh_token: SecretStr = Field(min_length=32, max_length=256, json_schema_extra={"writeOnly": True})
+
+
+class SessionTokenResponse(BaseModel):
+    access_token: str = Field(repr=False)
+    refresh_token: str = Field(repr=False)
+    token_type: Literal["Bearer"]
+    access_expires_at: datetime
+    refresh_expires_at: datetime
+    account_id: UUID
+    session_id: UUID
+    onboarding_required: bool
+
+
+class CurrentSessionResponse(BaseModel):
+    account_id: UUID
+    session_id: UUID
+    display_name: str
+    onboarding_required: bool
