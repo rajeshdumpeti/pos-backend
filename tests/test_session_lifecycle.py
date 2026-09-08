@@ -33,6 +33,7 @@ from app.infrastructure.authentication.session_security import (
     OpaqueRefreshTokenGenerator,
 )
 from app.application.session_lifecycle import SessionPolicy
+from app.application.email_registration import VerificationContinuationResult
 
 
 NOW = datetime(2026, 9, 2, 12, 0, tzinfo=UTC)
@@ -125,6 +126,16 @@ class Receipts:
     def get_by_previous_digest_for_update(self, digest):
         return next((record for record in self.records if record.previous_token_digest == digest), None)
 
+    def get_by_request_id_for_update(self, request_id):
+        return next(
+            (
+                record
+                for record in self.records
+                if record.refresh_request_id == request_id
+            ),
+            None,
+        )
+
 
 class Events:
     def __init__(self):
@@ -173,7 +184,12 @@ class State:
         self.commits = 0
 
 
-def service(state, event_logger=None, receipt_cipher=None):
+def service(
+    state,
+    event_logger=None,
+    receipt_cipher=None,
+    verification_continuation=None,
+):
     policy = SessionPolicy()
     return EmailSessionService(
         lambda request_id: Unit(state),
@@ -185,19 +201,20 @@ def service(state, event_logger=None, receipt_cipher=None):
         or AesGcmRefreshReceiptCipher(b"r" * 32, key_id="receipt", key_version=1),
         "hash:dummy",
         policy,
+        verification_continuation=verification_continuation,
         event_logger=event_logger,
         clock=lambda: NOW,
     )
 
 
-def test_sign_in_is_enumeration_safe_and_remember_me_is_30_days():
+def test_sign_in_is_enumeration_safe_and_refresh_is_seven_days():
     state = State()
     sessions = service(state)
     with pytest.raises(InvalidCredentialsError):
-        sessions.sign_in(SignInCommand("unknown@example.test", "wrong", False, "request-1"))
+        sessions.sign_in(SignInCommand("unknown@example.test", "wrong", "request-1"))
 
-    result = sessions.sign_in(SignInCommand("PERSON@example.test", "correct", True, "request-2"))
-    assert (result.refresh_expires_at - NOW).days == 30
+    result = sessions.sign_in(SignInCommand("PERSON@example.test", "correct", "request-2"))
+    assert (result.refresh_expires_at - NOW).days == 7
     assert (result.access_expires_at - NOW).seconds == 600
     assert state.commits == 1
     assert len(state.sessions.records) == 1
@@ -205,23 +222,41 @@ def test_sign_in_is_enumeration_safe_and_remember_me_is_30_days():
 
 def test_unverified_and_disabled_conditions_require_a_correct_password():
     state = State()
-    state.account = replace(state.account, status=AccountStatus.PENDING_VERIFICATION)
+    state.account = replace(
+        state.account,
+        status=AccountStatus.PENDING_VERIFICATION,
+        email_verified_at=None,
+    )
     state.accounts.account = state.account
+    state.identity = replace(state.identity, is_verified=False, verified_at=None)
+    state.identities.identity = state.identity
+
+    class Continuation:
+        def issue_sign_in_continuation(self, *_args):
+            return VerificationContinuationResult(
+                "v1." + "f" * 43,
+                "p***@example.test",
+                NOW.replace(hour=12, minute=30),
+                NOW.replace(hour=12, minute=1),
+            )
+
     with pytest.raises(EmailNotVerifiedError):
-        service(state).sign_in(SignInCommand("person@example.test", "correct", False, "unverified"))
+        service(state, verification_continuation=Continuation()).sign_in(
+            SignInCommand("person@example.test", "correct", "unverified")
+        )
     with pytest.raises(InvalidCredentialsError):
-        service(state).sign_in(SignInCommand("person@example.test", "wrong", False, "wrong"))
+        service(state).sign_in(SignInCommand("person@example.test", "wrong", "wrong"))
 
     state.account = replace(state.account, status=AccountStatus.DISABLED)
     state.accounts.account = state.account
     with pytest.raises(AccountUnavailableError):
-        service(state).sign_in(SignInCommand("person@example.test", "correct", False, "disabled"))
+        service(state).sign_in(SignInCommand("person@example.test", "correct", "disabled"))
 
 
 def test_refresh_retry_returns_exact_response_and_replay_revokes_family():
     state = State()
     sessions = service(state)
-    signed_in = sessions.sign_in(SignInCommand("person@example.test", "correct", False, "sign-in"))
+    signed_in = sessions.sign_in(SignInCommand("person@example.test", "correct", "sign-in"))
     rotated = sessions.refresh(RefreshCommand(signed_in.refresh_token, "retry-one", "rotate"))
     retried = sessions.refresh(RefreshCommand(signed_in.refresh_token, "retry-one", "retry"))
     assert retried == rotated
@@ -236,7 +271,7 @@ def test_logout_current_and_all_are_idempotent():
     state = State()
     sessions = service(state)
     signed_in = sessions.sign_in(
-        SignInCommand("person@example.test", "correct", False, "sign-in")
+        SignInCommand("person@example.test", "correct", "sign-in")
     )
 
     sessions.logout_current(signed_in.access_token, "logout-current")
@@ -253,7 +288,7 @@ def test_access_and_refresh_credentials_are_not_interchangeable():
     state = State()
     sessions = service(state)
     signed_in = sessions.sign_in(
-        SignInCommand("person@example.test", "correct", False, "sign-in")
+        SignInCommand("person@example.test", "correct", "sign-in")
     )
     with pytest.raises(AccessTokenInvalidError):
         sessions.current(signed_in.refresh_token, "wrong-bearer")
@@ -265,7 +300,7 @@ def test_current_session_restores_minimum_identity_and_expired_refresh_is_distin
     state = State()
     sessions = service(state)
     signed_in = sessions.sign_in(
-        SignInCommand("person@example.test", "correct", False, "sign-in")
+        SignInCommand("person@example.test", "correct", "sign-in")
     )
     current = sessions.current(signed_in.access_token, "restore")
     assert current.account_id == state.account.id
@@ -289,7 +324,7 @@ def test_rotation_cipher_failure_does_not_commit_partial_operation():
     state = State()
     sessions = service(state, receipt_cipher=FailingCipher())
     signed_in = sessions.sign_in(
-        SignInCommand("person@example.test", "correct", False, "sign-in")
+        SignInCommand("person@example.test", "correct", "sign-in")
     )
     with pytest.raises(SessionInternalError):
         sessions.refresh(RefreshCommand(signed_in.refresh_token, "rotation", "rotation"))
@@ -309,7 +344,7 @@ def test_diagnostics_are_allow_listed_and_emit_once_without_credentials():
     state = State()
     with pytest.raises(InvalidCredentialsError):
         service(state, logger).sign_in(
-            SignInCommand("must_never_appear@example.test", "must_never_appear", False, "safe-request")
+            SignInCommand("must_never_appear@example.test", "must_never_appear", "safe-request")
         )
 
     assert logger.events == [

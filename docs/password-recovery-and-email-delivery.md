@@ -1,6 +1,6 @@
 # Password recovery and authentication email delivery
 
-Current security policy: [Milestone 07-08](authentication-security-hardening.md).
+Current frozen client contract: [Authentication Contract v1.0.0](frontend-authentication-handoff.md).
 Earlier deferred-control notes below describe the milestone at its original delivery.
 
 ## Boundaries
@@ -53,7 +53,10 @@ Resend acceptance is not proof of inbox placement.
 ## Configuration
 
 - `AUTH_PASSWORD_RESET_URL`: app-owned reset destination. Protected environments
-  require HTTPS; the token is appended as a query parameter only after decrypt.
+  require HTTPS. Local/development also allow HTTP, `pos://`, and `pos-dev://`.
+  The base may contain ordinary query fields but must not contain a decoded
+  `token` field, including encoded or duplicate forms, credentials, or a fragment.
+  Delivery preserves existing fields and appends the opaque token exactly once.
 - `AUTH_EMAIL_PROVIDER`: `local` or `resend`.
 - `RESEND_API_KEY`: secret and required only for `resend`.
 - `AUTH_EMAIL_FROM`: sender required for `resend`; protected environments reject

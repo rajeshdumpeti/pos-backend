@@ -146,15 +146,42 @@ class AuthenticationErrorResponse(BaseModel):
     details: list[ErrorDetail] = Field(default_factory=list)
     retry_at: datetime | None = None
     retry_after_seconds: int | None = None
-    actions: list[Literal["sign_in", "forgot_password", "verify_email"]] = Field(
+    actions: list[
+        Literal[
+            "sign_in",
+            "forgot_password",
+            "verify_email",
+            "refresh_registration_policy",
+        ]
+    ] = Field(
         default_factory=list
     )
+
+
+class VerificationFlowContinuation(BaseModel):
+    flow_token: str = Field(repr=False)
+    masked_email: str
+    expires_at: datetime
+    resend_available_at: datetime
+
+
+class EmailNotVerifiedResponse(BaseModel):
+    code: Literal["email_not_verified"]
+    message: Literal["Email verification is required"]
+    request_id: str
+    details: list[ErrorDetail] = Field(default_factory=list)
+    actions: list[Literal["verify_email"]]
+    verification_flow: VerificationFlowContinuation
+
+
+class RegistrationPolicyResponse(BaseModel):
+    terms_version: str
+    privacy_version: str
 
 
 class SignInRequest(AuthenticationRequest):
     email: str = Field(min_length=3, max_length=320, repr=False)
     password: SecretStr = Field(min_length=1, max_length=1024, json_schema_extra={"writeOnly": True})
-    remember_me: bool = False
 
 
 class RefreshSessionRequest(AuthenticationRequest):

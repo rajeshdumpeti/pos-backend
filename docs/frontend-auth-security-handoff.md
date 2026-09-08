@@ -1,5 +1,8 @@
 # Frontend handoff — email/password security, 07-08
 
+> Historical milestone handoff. The authoritative frozen v1.0.0 contract is
+> [the consolidated authentication handoff](frontend-authentication-handoff.md).
+
 This is a backend handoff, not a frontend implementation. Preserve the existing
 [registration](frontend-auth-registration-handoff.md),
 [session](frontend-auth-session-handoff.md), and

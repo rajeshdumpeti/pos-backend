@@ -21,6 +21,7 @@ from app.application.email_registration import (
     AuthenticationCryptographyError,
     EncryptedOutboxPayload,
     FlowTokenLookup,
+    IssuedFlowToken,
     IssuedVerificationMaterial,
     VerificationEmailMessage,
 )
@@ -152,6 +153,16 @@ class HmacVerificationMaterialProvider:
             flow_token_digest=self._digest("flow", flow_token),
             code=code,
             code_digest=self._code_digest(str(challenge_id), purpose, code),
+            key_id=self._key_id,
+            key_version=self._key_version,
+        )
+
+    def issue_flow_token(self) -> IssuedFlowToken:
+        random_token = secrets.token_urlsafe(32)
+        flow_token = f"v{self._key_version}.{random_token}"
+        return IssuedFlowToken(
+            token=flow_token,
+            digest=self._digest("flow", flow_token),
             key_id=self._key_id,
             key_version=self._key_version,
         )

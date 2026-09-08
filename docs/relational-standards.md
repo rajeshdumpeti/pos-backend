@@ -401,7 +401,7 @@ authentication model or migration.
 | `external_provider_identities` | Unique provider plus subject; provider email not identity key; no raw provider tokens; collision and delete/revocation lifecycle |
 | `email_verification_challenges` | Flow/code digests only; attempt/check constraints; expiry/consume/supersede timestamps; single-current-challenge invariant; cleanup index |
 | `password_reset_challenges` | Token digest only; single-use consumption; expiry; account/session-revocation transaction; cleanup |
-| `refresh_sessions` | Token digest and family lookups; expiry/revocation; Remember Me duration; rotation lock; no raw token |
+| `refresh_sessions` | Token digest and family lookups; expiry/revocation; legacy duration flag fixed false; rotation lock; no raw token |
 | Refresh retry receipts | Separate short expiry; ciphertext and key version; exact request binding; cleanup; no ordinary raw-token storage |
 | `authentication_attempt_states` | Safe identity/network digests; atomic counters; window and lock timestamps; minimized retention |
 | `security_events` | Append-only intent; request/user/time lookup; sanitized metadata; retention/privacy classification; no sensitive payload |

@@ -4,7 +4,11 @@ from dataclasses import dataclass
 
 from sqlalchemy import Engine
 
-from app.application.session_lifecycle import EmailSessionService, SessionPolicy
+from app.application.session_lifecycle import (
+    EmailSessionService,
+    SessionPolicy,
+    VerificationContinuationIssuer,
+)
 from app.config import Settings, decode_authentication_key
 from app.infrastructure.authentication.registration import (
     Argon2idPasswordHasher,
@@ -27,7 +31,10 @@ class SessionComposition:
 
 
 def compose_email_sessions(
-    settings: Settings, *, shared_engine: Engine | None = None
+    settings: Settings,
+    *,
+    shared_engine: Engine | None = None,
+    verification_continuation: VerificationContinuationIssuer | None = None,
 ) -> SessionComposition | None:
     if (
         settings.database_url is None
@@ -59,6 +66,7 @@ def compose_email_sessions(
         ),
         hasher.hash("POS constant-time dummy password"),
         policy,
+        verification_continuation=verification_continuation,
         event_logger=SafeAuthenticationEventLogger(),
     )
     return SessionComposition(service=service, engine=engine)

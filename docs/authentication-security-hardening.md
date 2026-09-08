@@ -5,8 +5,8 @@ policy for 07-08, supplementing [registration](email-registration-verification.m
 [sessions](email-sign-in-session-lifecycle.md), and
 [recovery/email](password-recovery-and-email-delivery.md). Google, Apple and
 biometrics are deferred to a later MVP. 07-09 remains the final authentication
-contract and release-handoff milestone; its OpenAPI freeze and staging release
-matrix are not performed here.
+contract and release-handoff milestone. Its authoritative result is the
+[Authentication Contract v1.0.0 handoff](frontend-authentication-handoff.md).
 
 ## Evidence and preserved contracts
 
@@ -20,7 +20,7 @@ checkout. This document does not reconstruct missing approved documents.
 Unchanged frozen limits: six-digit verification code, 600-second code lifetime,
 five challenge attempts, 60-second resend cooldown, 1,800-second flow lifetime;
 15–1,024 Unicode-character passwords; HS256 access JWTs for exactly 600 seconds
-with zero clock skew; 7/30-day absolute refresh lifetime; 300-second exact refresh
+with zero clock skew; seven-day absolute refresh lifetime; 300-second exact refresh
 retry receipt with the same idempotency key. Reusing a rotated token with a
 different key, or outside that retry window, revokes its family. The permitted
 same-key retry is not a second rotation.
@@ -42,6 +42,7 @@ budget; recovery and expiry bound individual cooldowns, not a sustained attack.
 
 | Operation setting name | Source attempts | Identity/material attempts | Window seconds |
 |---|---:|---:|---:|
+| `REGISTRATION_POLICY` | 120 | 0 (source only) | 60 |
 | `REGISTRATION` | 20 | 5 | 900 |
 | `VERIFICATION_CONFIRM` | 60 | 10 | 600 |
 | `VERIFICATION_RESEND` | 30 | 5 | 600 |
@@ -276,5 +277,6 @@ email delivery requires a verified sender and app-owned HTTPS reset destination.
    Argon2 cost and actual email inbox receipt in the later protected-environment
    check. No deployment is authorized by this milestone.
 
-Migrations remain at `0003_registration_flow`; metadata/migration files are
-unchanged. Offline migration checks do not prove live PostgreSQL metadata parity.
+Authentication Contract v1.0.0 advances the single migration head to
+`0004_auth_contract_v1` for refresh idempotency-key uniqueness. Offline migration
+checks do not prove live PostgreSQL metadata parity.

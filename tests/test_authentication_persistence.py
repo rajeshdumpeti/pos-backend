@@ -105,6 +105,13 @@ def test_metadata_has_expected_constraints_indexes_and_no_raw_secret_columns():
     assert "response_ciphertext" in columns
     assert all(constraint.name for table in RELATIONAL_METADATA.tables.values() for constraint in table.constraints)
     assert all(index.name for table in RELATIONAL_METADATA.tables.values() for index in table.indexes)
+    receipt_constraints = {
+        constraint.name
+        for constraint in RELATIONAL_METADATA.tables[
+            "refresh_rotation_retry_receipts"
+        ].constraints
+    }
+    assert "uq_refresh_rotation_retry_receipts__refresh_request_id" in receipt_constraints
 
 
 def test_repositories_never_commit_or_create_sessions():

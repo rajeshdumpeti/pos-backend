@@ -80,7 +80,7 @@ and the server may be started without `--env-file .env`.
 | `AUTH_EMAIL_PROVIDER` | `local` | Optional | `local` or `resend` |
 | `RESEND_API_KEY` | unset | Required only for `resend` | Secret value; never represented |
 | `AUTH_EMAIL_FROM` | unset | Required only for `resend` | Protected environments reject the `resend.dev` test domain |
-| `AUTH_PASSWORD_RESET_URL` | unset | Required to compose password recovery | HTTP(S); HTTPS required in protected environments |
+| `AUTH_PASSWORD_RESET_URL` | unset | Required to compose password recovery | HTTP(S), `pos://`, or `pos-dev://` locally; HTTPS only in protected environments; no credentials, fragment, or decoded `token` query field |
 
 Whitespace and empty CORS entries are ignored, and duplicate origins are
 removed while preserving order. `*` cannot be combined with explicit origins.

@@ -33,10 +33,16 @@ review unless a deliberate branch/merge migration has prior architecture
 approval. Do not edit a revision that has been applied outside an isolated local
 environment; create a new corrective revision.
 
-Revision `0003_registration_flow` is the single current head. It adds only the
+Revision `0003_registration_flow` adds only the
 flow lifecycle/key metadata and deferred challenge-supersession support required
 by email registration. See
 [`email-registration-verification.md`](email-registration-verification.md).
+
+Revision `0004_auth_contract_v1` is the single current head. It adds a unique
+constraint on `refresh_rotation_retry_receipts.refresh_request_id`, binding one
+logical refresh key to one request payload under concurrency. Before upgrading a
+database containing pre-release traffic, verify that no duplicate request IDs
+exist. The migration fails safely rather than choosing a receipt to delete.
 
 Inspect the graph without connecting to a database:
 
@@ -119,8 +125,11 @@ are never required for ordinary CI.
   revision `0002_auth_persistence` after authorized live local validation.
 - Milestone 07-03 extends that schema through focused revision
   `0003_registration_flow`; it adds no table or seed data.
+- Milestone 07-09 extends it through `0004_auth_contract_v1`; it adds only the
+  refresh-receipt request-ID uniqueness constraint and seeds no data.
 
 The baseline creates no product schema. Revision `0002_auth_persistence` creates
 authentication persistence only. Revision `0003_registration_flow` adds no
 product schema or seed data; runtime behavior remains owned by application and
-infrastructure composition.
+infrastructure composition. Revision `0004_auth_contract_v1` changes no product
+schema and deletes no data.
