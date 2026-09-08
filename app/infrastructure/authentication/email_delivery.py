@@ -135,7 +135,17 @@ class ResendEmailProvider:
 
 def _reset_link(base_url: str, token: str) -> str:
     parsed = urlsplit(base_url)
-    query = parse_qsl(parsed.query, keep_blank_values=True)
+    try:
+        query = parse_qsl(
+            parsed.query,
+            keep_blank_values=True,
+            strict_parsing=True,
+            max_num_fields=20,
+        )
+    except ValueError:
+        raise EmailDeliveryError("reset_destination_invalid", retryable=False) from None
+    if any(name == "token" for name, _value in query):
+        raise EmailDeliveryError("reset_destination_invalid", retryable=False)
     query.append(("token", token))
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), ""))
 

@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.application.session_lifecycle import (
     EmailSessionService, SessionPolicy, SignInCommand, RefreshCommand,
     AccessTokenInvalidError, RefreshSessionInvalidError, RefreshSessionReplayedError,
+    RefreshIdempotencyConflictError,
 )
 from app.application.password_recovery import RequestPasswordResetCommand, ConfirmPasswordResetCommand
 from app.infrastructure.authentication.session_security import JwtAccessTokenCodec, OpaqueRefreshTokenGenerator, AesGcmRefreshReceiptCipher
@@ -37,7 +38,7 @@ def setup_session(recovery):
         unit.accounts.update_password_hash(account, FastHasher().hash('test-password'), NOW)
         unit.commit()
     service = session_service(factory)
-    return service, service.sign_in(SignInCommand('person@example.com','test-password',False,'signin'))
+    return service, service.sign_in(SignInCommand('person@example.com','test-password','signin'))
 
 
 def test_service_concurrent_rotation_single_winner_and_family_containment(engine, recovery):
@@ -81,3 +82,14 @@ def test_rotation_crypto_failure_rolls_back_token_and_receipt(engine, recovery):
     with Session(engine) as session:
         assert session.scalars(select(RefreshRotationRetryReceiptModel)).all() == []
     assert sessions.refresh(RefreshCommand(old.refresh_token,'second','success')).session_id == old.session_id
+
+
+def test_same_idempotency_key_cannot_rotate_different_material(engine, recovery):
+    sessions, original = setup_session(recovery)
+    rotated = sessions.refresh(
+        RefreshCommand(original.refresh_token, "one-logical-operation", "first")
+    )
+    with pytest.raises(RefreshIdempotencyConflictError):
+        sessions.refresh(
+            RefreshCommand(rotated.refresh_token, "one-logical-operation", "second")
+        )

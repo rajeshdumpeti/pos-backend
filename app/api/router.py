@@ -10,6 +10,7 @@ from app.api.routes import (
 from app.application.email_registration import (
     AuthenticationAvailabilityDiagnostic,
     EmailRegistrationService,
+    RegistrationPolicyResult,
 )
 from app.application import MockResourceService
 from app.application.session_lifecycle import EmailSessionService
@@ -22,6 +23,7 @@ def create_api_router(
     authentication_availability_diagnostic: AuthenticationAvailabilityDiagnostic | None = None,
     email_session_service: EmailSessionService | None = None,
     password_recovery_service: PasswordRecoveryService | None = None,
+    registration_policy: RegistrationPolicyResult | None = None,
 ) -> APIRouter:
     if authentication_availability_diagnostic is None:
         raise ValueError("Authentication availability diagnostic is required")
@@ -33,6 +35,7 @@ def create_api_router(
             authentication_availability_diagnostic,
             email_session_service,
             password_recovery_service,
+            registration_policy,
         )
     )
     router.include_router(create_resources_router(resource_service))

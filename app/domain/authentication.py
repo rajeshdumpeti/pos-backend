@@ -190,7 +190,7 @@ class RefreshRotationReceiptRecord:
     refresh_session_id: RefreshSessionId
     token_family_id: UUID
     previous_token_digest: str = field(repr=False)
-    refresh_request_id: str
+    refresh_request_id: str = field(repr=False)
     response_ciphertext: bytes = field(repr=False)
     encryption_key_id: str = field(repr=False)
     encryption_key_version: int = field(repr=False)
@@ -234,6 +234,7 @@ class SecurityEventRecord:
             "unverified_email_change_accepted", "email_verification_resend_accepted",
             "email_verification_rejected", "existing_account_ownership_proved",
             "email_verification_succeeded", "password_reset_succeeded", "password_reset_requested",
+            "unverified_sign_in_continuation_issued",
         }
         if self.event_type not in allowed:
             raise ValueError("Security event type is not approved")

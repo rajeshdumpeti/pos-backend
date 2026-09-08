@@ -21,6 +21,7 @@ from app.application.email_registration import (
     RegisterAccountCommand,
     RegistrationPolicy,
     RegistrationInputRejectedError,
+    LegalAcceptanceOutdatedError,
     ResendCooldownActiveError,
     ResendVerificationCommand,
     VerificationAttemptsExceededError,
@@ -33,6 +34,7 @@ from app.infrastructure.authentication.models import (
     AuthenticationEmailOutboxModel,
     EmailIdentityModel,
     EmailVerificationChallengeModel,
+    RefreshSessionModel,
     UserAccountModel,
 )
 from app.infrastructure.authentication.registration import (
@@ -44,6 +46,17 @@ from app.infrastructure.authentication.registration import (
 )
 from app.infrastructure.authentication.unit_of_work import (
     SqlAlchemyAuthenticationUnitOfWork,
+)
+from app.application.session_lifecycle import (
+    EmailNotVerifiedError,
+    EmailSessionService,
+    SessionPolicy,
+    SignInCommand,
+)
+from app.infrastructure.authentication.session_security import (
+    AesGcmRefreshReceiptCipher,
+    JwtAccessTokenCodec,
+    OpaqueRefreshTokenGenerator,
 )
 from app.infrastructure.database import create_database_engine, dispose_database_engine
 from app.infrastructure.relational import RELATIONAL_METADATA
@@ -218,7 +231,7 @@ def test_registration_requires_current_legal_acceptance(service):
     }
     with pytest.raises(RegistrationInputRejectedError):
         service.register(RegisterAccountCommand(terms_accepted=False, **base))
-    with pytest.raises(RegistrationInputRejectedError):
+    with pytest.raises(LegalAcceptanceOutdatedError):
         service.register(
             RegisterAccountCommand(
                 terms_accepted=True,
@@ -226,6 +239,143 @@ def test_registration_requires_current_legal_acceptance(service):
                 **{key: value for key, value in base.items() if key != "terms_version"},
             )
         )
+
+
+def _session_service(engine, registration, clock):
+    sessions = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
+    policy = SessionPolicy()
+    hasher = FastTestPasswordHasher()
+    return EmailSessionService(
+        lambda request_id: SqlAlchemyAuthenticationUnitOfWork(
+            sessions, request_id=request_id
+        ),
+        hasher,
+        EmailValidatorNormalizer(),
+        JwtAccessTokenCodec("k" * 64, policy),
+        OpaqueRefreshTokenGenerator(),
+        AesGcmRefreshReceiptCipher(
+            b"r" * 32, key_id="receipt-test", key_version=1
+        ),
+        hasher.hash("constant dummy password"),
+        policy,
+        verification_continuation=registration,
+        clock=clock,
+    )
+
+
+def _unverified_sign_in(sessions, email="person@example.com"):
+    with pytest.raises(EmailNotVerifiedError) as caught:
+        sessions.sign_in(
+            SignInCommand(email, "a private passphrase 9472", "unverified-sign-in")
+        )
+    return caught.value.continuation
+
+
+def test_unverified_sign_in_continuation_confirms_with_existing_code(
+    engine, service, cipher, verification_material, clock
+):
+    pending = _register(service)
+    _, message = _message_for_flow(
+        engine, cipher, verification_material, pending.flow_token
+    )
+    continuation = _unverified_sign_in(
+        _session_service(engine, service, clock)
+    )
+
+    assert service.confirm(
+        ConfirmEmailCommand(
+            continuation.flow_token,
+            message.code,
+            "continuation-confirm",
+        )
+    ).status == "email_verified"
+    with Session(engine) as session:
+        assert session.scalars(select(RefreshSessionModel)).all() == []
+        assert len(session.scalars(select(AuthenticationEmailOutboxModel)).all()) == 1
+
+
+def test_unverified_sign_in_continuation_supports_resend_and_change_email(
+    engine, service, clock
+):
+    _register(service)
+    sessions = _session_service(engine, service, clock)
+    resend_continuation = _unverified_sign_in(sessions)
+    clock.now += timedelta(seconds=61)
+    resent = service.resend(
+        ResendVerificationCommand(
+            resend_continuation.flow_token, "continuation-resend"
+        )
+    )
+    changed = service.change_email(
+        ChangeUnverifiedEmailCommand(
+            resent.flow_token,
+            "replacement@example.com",
+            "continuation-change",
+        )
+    )
+    assert resent.flow_token != resend_continuation.flow_token
+    assert changed.masked_email == "r********@example.com"
+
+
+def test_concurrent_unverified_sign_in_leaves_one_current_flow_and_one_email(
+    engine, service, verification_material, clock
+):
+    _register(service)
+    sessions = _session_service(engine, service, clock)
+
+    def attempt(index):
+        with pytest.raises(EmailNotVerifiedError) as caught:
+            sessions.sign_in(
+                SignInCommand(
+                    "person@example.com",
+                    "a private passphrase 9472",
+                    f"concurrent-sign-in-{index}",
+                )
+            )
+        return caught.value.continuation.flow_token
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        tokens = list(pool.map(attempt, range(2)))
+    with Session(engine) as session:
+        current = session.scalars(
+            select(EmailVerificationChallengeModel).where(
+                EmailVerificationChallengeModel.consumed_at.is_(None),
+                EmailVerificationChallengeModel.superseded_by_id.is_(None),
+            )
+        ).one()
+        assert len(session.scalars(select(AuthenticationEmailOutboxModel)).all()) == 1
+        assert len(session.scalars(select(RefreshSessionModel)).all()) == 0
+    matching = [
+        token
+        for token in tokens
+        if verification_material.flow_lookup(token).digest
+        == current.flow_token_digest
+    ]
+    assert len(matching) == 1
+
+
+def test_unverified_continuation_outbox_failure_rolls_back(
+    engine, service, clock
+):
+    _register(service)
+    with engine.begin() as connection:
+        connection.execute(EmailVerificationChallengeModel.__table__.delete())
+        connection.execute(AuthenticationEmailOutboxModel.__table__.delete())
+    broken_registration = _service(engine, clock, FailingCipher())
+    sessions = _session_service(engine, broken_registration, clock)
+
+    with pytest.raises(AuthenticationCryptographyError):
+        sessions.sign_in(
+            SignInCommand(
+                "person@example.com",
+                "a private passphrase 9472",
+                "failed-continuation",
+            )
+        )
+    with Session(engine) as session:
+        assert session.scalars(select(EmailVerificationChallengeModel)).all() == []
+        assert session.scalars(select(AuthenticationEmailOutboxModel)).all() == []
+        assert session.scalars(select(RefreshSessionModel)).all() == []
 
 
 def test_pending_and_verified_duplicates_have_equivalent_initial_public_results(

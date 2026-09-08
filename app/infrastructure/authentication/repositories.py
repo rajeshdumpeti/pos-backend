@@ -17,6 +17,7 @@ from app.application.authentication_persistence import (
     AuthenticationPersistenceUnavailableError,
     DuplicateNormalizedIdentityError,
     DuplicateProviderIdentityError,
+    DuplicateRefreshRequestIdError,
     UnexpectedAuthenticationPersistenceError,
 )
 from app.domain.authentication import (
@@ -73,6 +74,12 @@ def _raise_integrity_error(error: IntegrityError) -> NoReturn:
         raise_safe_database_error(
             DuplicateProviderIdentityError,
             "Provider identity already exists",
+            error,
+        )
+    if name == "uq_refresh_rotation_retry_receipts__refresh_request_id":
+        raise_safe_database_error(
+            DuplicateRefreshRequestIdError,
+            "Refresh request identifier already exists",
             error,
         )
     raise_safe_database_error(
@@ -398,6 +405,39 @@ class SqlAlchemyEmailVerificationChallengeRepository:
             )
         return result.rowcount == 1
 
+    def rotate_flow_token(
+        self,
+        challenge_id: UUID,
+        expected_status_version: int,
+        flow_token_digest: str,
+        digest_key_id: str,
+        digest_key_version: int,
+    ) -> bool:
+        try:
+            result = self._session.execute(
+                update(EmailVerificationChallengeModel)
+                .where(
+                    EmailVerificationChallengeModel.id == challenge_id,
+                    EmailVerificationChallengeModel.consumed_at.is_(None),
+                    EmailVerificationChallengeModel.superseded_by_id.is_(None),
+                    EmailVerificationChallengeModel.status_version
+                    == expected_status_version,
+                )
+                .values(
+                    flow_token_digest=flow_token_digest,
+                    digest_key_id=digest_key_id,
+                    digest_key_version=digest_key_version,
+                    status_version=expected_status_version + 1,
+                )
+            )
+        except SQLAlchemyError as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+        return result.rowcount == 1
+
     def increment_attempts(
         self, challenge_id: UUID, expected_status_version: int
     ) -> int | None:
@@ -657,6 +697,20 @@ class SqlAlchemyRefreshRotationReceiptRepository:
             .where(
                 RefreshRotationRetryReceiptModel.previous_token_digest
                 == previous_token_digest
+            )
+            .with_for_update(),
+        )
+        return None if model is None else _receipt_record(model)
+
+    def get_by_request_id_for_update(
+        self, refresh_request_id: str
+    ) -> RefreshRotationReceiptRecord | None:
+        model = _execute_one(
+            self._session,
+            select(RefreshRotationRetryReceiptModel)
+            .where(
+                RefreshRotationRetryReceiptModel.refresh_request_id
+                == refresh_request_id
             )
             .with_for_update(),
         )

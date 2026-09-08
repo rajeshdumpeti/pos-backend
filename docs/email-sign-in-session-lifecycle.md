@@ -1,6 +1,6 @@
 # Email sign-in and secure session lifecycle
 
-Current security policy: [Milestone 07-08](authentication-security-hardening.md).
+Current frozen client contract: [Authentication Contract v1.0.0](frontend-authentication-handoff.md).
 Earlier deferred-control notes below describe the milestone at its original delivery.
 
 This is the canonical Milestone 07-04 design for verified email sign-in and
@@ -32,8 +32,8 @@ contract. Importing the app never connects to PostgreSQL.
 - JWTs contain no email, display name, role, password, provider token, or other
   profile data.
 - Refresh tokens are opaque 256-bit random bearer values. Only SHA-256 digests
-  are persisted. Normal sessions expire after 7 days; Remember Me sessions
-  expire after 30 days.
+  are persisted. Sessions expire after 7 days. Authentication Contract v1.0.0
+  has no Remember Me request field; either boolean value is rejected as extra input.
 - Rotation never extends the original absolute refresh expiry. Repositories do
   not commit; the application use case commits the token replacement, encrypted
   retry receipt, and security event atomically.
@@ -41,6 +41,9 @@ contract. Importing the app never connects to PostgreSQL.
   and key within five minutes returns the exact prior encrypted response. Reuse
   with another key, or after the receipt window, is replay: the token family is
   revoked and the public response is `refresh_session_replayed`.
+- One idempotency key is bound to one old refresh-token digest. Reuse with
+  different refresh material returns `409 refresh_idempotency_conflict` without
+  rotation. A database uniqueness constraint preserves this under concurrency.
 - Current-session validation checks both the JWT and persisted session/account
   state, so logout and authentication-epoch changes take effect immediately.
 - Current-device and all-device logout are idempotent. They return `204` with no
@@ -51,7 +54,11 @@ contract. Importing the app never connects to PostgreSQL.
 Sign-in normalizes email through the registration policy and uses Argon2id.
 Unknown email and incorrect password share `invalid_credentials`; unknown email
 still performs a dummy Argon2 verification. Only a correct password can produce
-`email_not_verified`. Disabled or otherwise unavailable accounts use
+`email_not_verified`. For an eligible pending account, that response carries a
+masked verification continuation. The backend rotates the active flow credential
+without duplicate mail, or atomically creates a challenge and encrypted outbox
+message when no usable flow exists. It creates no session. Disabled or otherwise
+unavailable accounts use
 `account_unavailable`. A valid older Argon2 parameter set is rehashed inside the
 same successful sign-in transaction.
 
@@ -77,12 +84,12 @@ Milestone 07-02 already supplied `refresh_sessions`,
 `refresh_rotation_retry_receipts`, and `security_events`, including the required
 constraints and indexes. 07-04 adds repository operations only; it creates no
 table, product model, seed, or Alembic revision. The database must remain at
-`0003_registration_flow (head)`.
+`0004_auth_contract_v1 (head)`.
 
 ## Validation
 
 Unit tests use deterministic clocks and in-process repositories/doubles. They
-cover token expiry and tampering, 7/30-day duration, enumeration resistance,
+cover token expiry and tampering, seven-day duration, enumeration resistance,
 rotation, exact retry, replay-family revocation, idempotent logout, secret-safe
 errors, HTTP caching, OpenAPI, and configuration. PostgreSQL integration uses
 the repository's opt-in `POS_TEST_DATABASE_URL` convention and must never target

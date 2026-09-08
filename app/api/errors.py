@@ -12,6 +12,7 @@ from app.api.schemas import ErrorDetail, ErrorResponse
 from app.application.email_registration import (
     AccountAlreadyExistsError,
     AuthenticationCryptographyError,
+    LegalAcceptanceOutdatedError,
     PasswordRejectedError,
     RegistrationDependencyUnavailableError,
     RegistrationInputRejectedError,
@@ -35,6 +36,7 @@ from app.application.session_lifecycle import (
     RefreshSessionInvalidError,
     RefreshSessionExpiredError,
     RefreshSessionReplayedError,
+    RefreshIdempotencyConflictError,
     SessionDependencyUnavailableError,
     SessionInternalError,
     SessionLifecycleError,
@@ -154,6 +156,14 @@ async def _handle_registration_error(
         return _error_response(
             request, 422, "request_validation_failed", "Request validation failed"
         )
+    if isinstance(error, LegalAcceptanceOutdatedError):
+        return _error_response(
+            request,
+            409,
+            "legal_acceptance_outdated",
+            "Registration policy has changed",
+            actions=["refresh_registration_policy"],
+        )
     if isinstance(error, PasswordRejectedError):
         return _error_response(
             request, 400, "password_rejected", "Password was rejected"
@@ -180,6 +190,7 @@ async def _handle_registration_error(
             429,
             "verification_attempts_exceeded",
             "Verification attempts were exceeded",
+            retry_after_seconds=error.retry_after_seconds,
         )
     if isinstance(error, ResendCooldownActiveError):
         return _error_response(
@@ -223,12 +234,19 @@ async def _handle_session_error(
     if isinstance(error, InvalidCredentialsError):
         return _error_response(request, 401, "invalid_credentials", "Email or password is invalid")
     if isinstance(error, EmailNotVerifiedError):
+        continuation = error.continuation
         return _error_response(
             request,
             403,
             "email_not_verified",
             "Email verification is required",
             actions=["verify_email"],
+            verification_flow={
+                "flow_token": continuation.flow_token,
+                "masked_email": continuation.masked_email,
+                "expires_at": continuation.expires_at.isoformat(),
+                "resend_available_at": continuation.resend_available_at.isoformat(),
+            },
         )
     if isinstance(error, AccountUnavailableError):
         return _error_response(request, 403, "account_unavailable", "Account is unavailable")
@@ -244,6 +262,13 @@ async def _handle_session_error(
         return _error_response(request, 401, "refresh_session_invalid", "Refresh session is invalid")
     if isinstance(error, RefreshSessionReplayedError):
         return _error_response(request, 409, "refresh_session_replayed", "Refresh session replay was detected")
+    if isinstance(error, RefreshIdempotencyConflictError):
+        return _error_response(
+            request,
+            409,
+            "refresh_idempotency_conflict",
+            "Refresh idempotency key conflicts with another request",
+        )
     if isinstance(error, SessionDependencyUnavailableError):
         return _error_response(request, 503, "dependency_unavailable", "A required dependency is unavailable")
     if isinstance(error, SessionInternalError):
@@ -312,6 +337,7 @@ def _error_response(
     retry_at: str | None = None,
     retry_after_seconds: int | None = None,
     actions: list[str] | None = None,
+    verification_flow: dict[str, Any] | None = None,
 ) -> JSONResponse:
     request_id = get_request_id(request)
     headers = dict(extra_headers or {})
@@ -330,6 +356,8 @@ def _error_response(
         headers["Retry-After"] = str(retry_after_seconds)
     if actions:
         content["actions"] = actions
+    if verification_flow is not None:
+        content["verification_flow"] = verification_flow
     return JSONResponse(
         status_code=status_code,
         content=content,

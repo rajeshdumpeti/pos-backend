@@ -75,14 +75,24 @@ def test_sign_in_contract_is_no_store_and_enumeration_safe():
     service = StubSessionService()
     response = client(service).post(
         "/api/v1/auth/sessions",
-        json={"email": "person@example.test", "password": "private", "remember_me": True},
+        json={"email": "person@example.test", "password": "private"},
         headers={"X-Request-ID": "sign-in-request"},
     )
     assert response.status_code == 200
     assert response.headers["Cache-Control"] == "no-store"
     assert response.headers["Pragma"] == "no-cache"
-    assert service.last.remember_me is True
     assert service.last.request_id == "sign-in-request"
+
+    unavailable = client(service).post(
+        "/api/v1/auth/sessions",
+        json={
+            "email": "person@example.test",
+            "password": "private",
+            "remember_me": True,
+        },
+    )
+    assert unavailable.status_code == 422
+    assert unavailable.json()["code"] == "request_validation_failed"
 
     failed = client(StubSessionService(InvalidCredentialsError())).post(
         "/api/v1/auth/sessions",

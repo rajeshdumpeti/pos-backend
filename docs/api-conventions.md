@@ -14,18 +14,24 @@ support mobile UI development but do not define the final production API.
 | `PATCH` | `/{resource}/{item_id}` | `200` | Updated item object | `400`, `404`, `422`, `500` | Mock resources | `update_mock_resource_item` |
 | `DELETE` | `/{resource}/{item_id}` | `204` | No body | `400`, `422`, `500` | Mock resources | `delete_mock_resource_item` |
 | `POST` | `/demo/reset` | `200` | `ResetResponse` | `500` | Demo | `reset_mock_demo` |
-| `POST` | `/api/v1/auth/registrations` | `202` | `PendingVerificationResponse` | `400`, `422`, `429`, `500`, `503` | Authentication | `create_email_registration` |
-| `POST` | `/api/v1/auth/email-verifications/confirm` | `201` | `EmailVerifiedResponse` | `400`, `409`, `410`, `422`, `429`, `500`, `503` | Authentication | `confirm_email_verification` |
-| `POST` | `/api/v1/auth/email-verifications/resend` | `202` | `PendingVerificationResponse` | `400`, `410`, `422`, `429`, `500`, `503` | Authentication | `resend_email_verification` |
-| `PATCH` | `/api/v1/auth/email-verifications/email` | `202` | `PendingVerificationResponse` | `400`, `410`, `422`, `429`, `500`, `503` | Authentication | `change_unverified_email` |
-| `POST` | `/api/v1/auth/sessions` | `200` | `SessionTokenResponse` | `401`, `403`, `500`, `503` | Authentication | `create_email_session` |
-| `POST` | `/api/v1/auth/sessions/refresh` | `200` | `SessionTokenResponse` | `401`, `409`, `500`, `503` | Authentication | `refresh_email_session` |
-| `GET` | `/api/v1/auth/session` | `200` | `CurrentSessionResponse` | `401`, `500`, `503` | Authentication | `get_current_session` |
-| `DELETE` | `/api/v1/auth/session` | `204` | No body | `401`, `500`, `503` | Authentication | `delete_current_session` |
-| `DELETE` | `/api/v1/auth/sessions` | `204` | No body | `401`, `500`, `503` | Authentication | `delete_all_sessions` |
+| `GET` | `/api/v1/auth/registration-policy` | `200` | `RegistrationPolicyResponse` | See frozen inventory | Authentication | `get_authentication_registration_policy` |
+| `POST` | `/api/v1/auth/registrations` | `202` | `PendingVerificationResponse` | See frozen inventory | Authentication | `create_email_registration` |
+| `POST` | `/api/v1/auth/email-verifications/confirm` | `201` | `EmailVerifiedResponse` | See frozen inventory | Authentication | `confirm_email_verification` |
+| `POST` | `/api/v1/auth/email-verifications/resend` | `202` | `PendingVerificationResponse` | See frozen inventory | Authentication | `resend_email_verification` |
+| `PATCH` | `/api/v1/auth/email-verifications/email` | `202` | `PendingVerificationResponse` | See frozen inventory | Authentication | `change_unverified_email` |
+| `POST` | `/api/v1/auth/sessions` | `200` | `SessionTokenResponse` | See frozen inventory | Authentication | `create_email_session` |
+| `POST` | `/api/v1/auth/sessions/refresh` | `200` | `SessionTokenResponse` | See frozen inventory | Authentication | `refresh_email_session` |
+| `GET` | `/api/v1/auth/session` | `200` | `CurrentSessionResponse` | See frozen inventory | Authentication | `get_current_session` |
+| `DELETE` | `/api/v1/auth/session` | `204` | No body | See frozen inventory | Authentication | `delete_current_session` |
+| `DELETE` | `/api/v1/auth/sessions` | `204` | No body | See frozen inventory | Authentication | `delete_all_sessions` |
+| `POST` | `/api/v1/auth/password-resets` | `202` | `PasswordResetAcceptedResponse` | See frozen inventory | Authentication | `request_password_reset` |
+| `POST` | `/api/v1/auth/password-resets/confirm` | `204` | No body | See frozen inventory | Authentication | `confirm_password_reset` |
 
 `/docs` and `/openapi.json` remain local framework endpoints. The dynamic mock
 routes intentionally retain their existing unversioned paths and fixture shapes.
+The exact authentication status inventory and client transitions are frozen in
+[Authentication Contract v1.0.0](frontend-authentication-handoff.md) and enforced
+against generated OpenAPI by contract tests.
 
 ## Request and response conventions
 
@@ -96,6 +102,7 @@ Current stable codes are:
 | `verification_attempts_exceeded` | `429` | Five attempts were consumed |
 | `resend_cooldown_active` | `429` | Backend resend cooldown remains active |
 | `account_already_exists` | `409` | Mailbox ownership proved for an existing account |
+| `legal_acceptance_outdated` | `409` | Registration legal versions must be refreshed |
 | `rate_limited` | `429` | Authentication admission cooldown (07-08) |
 | `dependency_unavailable` | `503` | Required persistence/cryptographic dependency is unavailable |
 | `invalid_credentials` | `401` | Email or password is invalid without revealing account existence |
@@ -107,6 +114,7 @@ Current stable codes are:
 | `refresh_session_invalid` | `401` | Refresh session is malformed, unknown, or revoked |
 | `refresh_session_expired` | `401` | Absolute refresh-session lifetime ended |
 | `refresh_session_replayed` | `409` | Refresh-token reuse revoked the token family |
+| `refresh_idempotency_conflict` | `409` | An idempotency key was reused with different refresh material |
 
 Domain errors remain framework-independent. The API boundary maps them to
 status codes and error codes. Validation details contain only `field`, `code`,
@@ -147,6 +155,9 @@ authentication contract uses `/api/v1/auth`; future stable authentication
 changes must preserve it or follow an explicit coordinated migration. Do not
 duplicate the version tree. Every contract change requires an OpenAPI diff
 review.
+Generated OpenAPI publishes top-level
+`x-pos-authentication-contract-version: 1.0.0`. Frontend builds must pin both the
+reviewed backend commit and this contract version.
 
 ## Pagination policy
 

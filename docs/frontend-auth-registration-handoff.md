@@ -1,5 +1,8 @@
 # Frontend handoff: email registration and verification
 
+> Historical milestone handoff. The authoritative frozen v1.0.0 contract is
+> [the consolidated authentication handoff](frontend-authentication-handoff.md).
+
 This is the Milestone 07-03 contract for the POS mobile Authentication UI. The
 backend supplies state and authoritative timing; the frontend owns token-driven
 visual design, focus, keyboard behavior, accessibility, and offline presentation.

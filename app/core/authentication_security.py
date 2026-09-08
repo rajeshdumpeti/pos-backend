@@ -17,6 +17,7 @@ from app.core.request_id import get_request_id
 
 
 OPERATIONS = {
+    ('GET', '/registration-policy'): ('registration_policy', None, False),
     ('POST', '/registrations'): ('registration', 'email', True),
     ('POST', '/email-verifications/confirm'): ('verification_confirm', 'flow_token', False),
     ('POST', '/email-verifications/resend'): ('verification_resend', 'flow_token', False),

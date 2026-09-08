@@ -234,6 +234,7 @@ class RefreshRotationRetryReceiptModel(RelationalBase):
     __tablename__ = "refresh_rotation_retry_receipts"
     __table_args__ = (
         UniqueConstraint("previous_token_digest", "refresh_request_id"),
+        UniqueConstraint("refresh_request_id"),
         CheckConstraint("expires_at > created_at", info={"purpose": "expiry_after_creation"}),
         CheckConstraint("encryption_key_version > 0", info={"purpose": "key_version_positive"}),
         Index(None, "refresh_session_id"),

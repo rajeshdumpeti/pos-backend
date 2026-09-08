@@ -1,6 +1,6 @@
 # Email registration and verification
 
-Current security policy: [Milestone 07-08](authentication-security-hardening.md).
+Current frozen client contract: [Authentication Contract v1.0.0](frontend-authentication-handoff.md).
 Earlier deferred-control notes below describe the milestone at its original delivery.
 
 Milestone 07-03 introduces POS's first public authentication capability. It is
@@ -20,8 +20,9 @@ challenge replacement, identity changes, security events, and encrypted outbox
 writes commit once or roll back together. A network email provider is never
 called inside the transaction.
 
-The four public endpoints are under `/api/v1/auth`:
+The registration endpoints are under `/api/v1/auth`:
 
+- `GET /registration-policy`
 - `POST /registrations`
 - `POST /email-verifications/confirm`
 - `POST /email-verifications/resend`
@@ -31,6 +32,10 @@ The initial registration response is deliberately equivalent for new,
 pending, and active email identities. An active account is disclosed only
 after a valid code proves control of its mailbox. A repeated registration never
 changes an existing password, name, legal acceptance, or account state.
+Clients fetch current legal identifiers from `GET /registration-policy`.
+Outdated submitted identifiers return `409 legal_acceptance_outdated` with
+action `refresh_registration_policy`; false acceptance booleans remain validation
+failures.
 
 ## Password policy
 
@@ -75,6 +80,12 @@ the current challenge and creates a replacement challenge and outbox record.
 Changing an unverified email supersedes the old flow. A collision with another
 identity creates an ownership-proof flow without modifying either account;
 only successful proof may return `account_already_exists`.
+
+A correct sign-in password for a pending unverified account returns a masked,
+typed continuation. While a challenge is usable, it rotates only the active flow
+credential and preserves the code, expiry, cooldown, and single outbox message.
+If no usable challenge exists, challenge and encrypted outbox creation share one
+transaction. Invalid credentials never create a flow.
 
 ## Encrypted outbox and local inspection
 
@@ -132,7 +143,7 @@ Operational checks:
   render the driver exception.
 - Encryption/key mismatch: compare configured non-secret key ID/version with
   stored metadata and preserve ciphertext.
-- Schema mismatch: confirm Alembic is at `0003_registration_flow` and run the
+- Schema mismatch: confirm Alembic is at `0004_auth_contract_v1` and run the
   metadata-parity test.
 
 ## Migration
@@ -142,3 +153,5 @@ metadata, completion action, constraints, and a deferred self-reference needed
 for atomic challenge supersession. It adds no account/product table and seeds no
 data. Upgrade, downgrade, re-upgrade, and metadata parity are required before
 release.
+Revision `0004_auth_contract_v1` adds only the refresh-receipt idempotency-key
+uniqueness invariant; it does not change registration storage.

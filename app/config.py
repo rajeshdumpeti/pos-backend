@@ -11,7 +11,7 @@ from ipaddress import ip_network
 
 from app.application.authentication_security import AbusePolicy, DEFAULT_POLICIES
 from typing import Self
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
@@ -294,16 +294,36 @@ def _validate_authentication_settings(settings: Settings) -> None:
             reset_url = urlsplit(settings.auth_password_reset_url)
         except ValueError:
             raise ConfigurationError("AUTH_PASSWORD_RESET_URL must be a valid URL") from None
+        allowed_reset_schemes = (
+            {"http", "https", "pos", "pos-dev"}
+            if settings.app_env in {AppEnvironment.LOCAL, AppEnvironment.DEVELOPMENT}
+            else {"https"}
+        )
+        try:
+            reset_query = parse_qsl(
+                reset_url.query,
+                keep_blank_values=True,
+                strict_parsing=True,
+                max_num_fields=20,
+            )
+        except ValueError:
+            raise ConfigurationError(
+                "AUTH_PASSWORD_RESET_URL query must be valid"
+            ) from None
         if (
-            reset_url.scheme not in {"http", "https"}
+            reset_url.scheme not in allowed_reset_schemes
             or not reset_url.hostname
             or reset_url.username is not None
             or reset_url.password is not None
             or reset_url.fragment
         ):
-            raise ConfigurationError("AUTH_PASSWORD_RESET_URL must be a valid HTTP(S) URL")
-        if settings.app_env in _PROTECTED_ENVIRONMENTS and reset_url.scheme != "https":
-            raise ConfigurationError("AUTH_PASSWORD_RESET_URL must use HTTPS in protected environments")
+            raise ConfigurationError(
+                "AUTH_PASSWORD_RESET_URL must be an approved reset destination"
+            )
+        if any(name == "token" for name, _value in reset_query):
+            raise ConfigurationError(
+                "AUTH_PASSWORD_RESET_URL must not contain a token parameter"
+            )
     if settings.auth_email_provider is AuthenticationEmailProvider.RESEND:
         missing_email = [
             name for name, value in (

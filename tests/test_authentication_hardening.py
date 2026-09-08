@@ -160,7 +160,7 @@ def test_claim_confusion_and_unsigned_tokens():
 def test_retry_receipt_cannot_bypass_epoch_or_disabled_account():
     state = State()
     sessions = service(state)
-    original = sessions.sign_in(SignInCommand('person@example.test','correct',False,'request'))
+    original = sessions.sign_in(SignInCommand('person@example.test','correct','request'))
     sessions.refresh(RefreshCommand(original.refresh_token, 'retry', 'request'))
     state.accounts.account = replace(state.accounts.account, authentication_epoch=1)
     with pytest.raises(RefreshSessionReplayedError):
@@ -171,9 +171,9 @@ def test_retry_receipt_cannot_bypass_epoch_or_disabled_account():
 def test_revoked_access_cannot_log_out_new_sessions():
     state = State()
     sessions = service(state)
-    old = sessions.sign_in(SignInCommand('person@example.test','correct',False,'request'))
+    old = sessions.sign_in(SignInCommand('person@example.test','correct','request'))
     sessions.logout_current(old.access_token, 'request')
-    new = sessions.sign_in(SignInCommand('person@example.test','correct',False,'request'))
+    new = sessions.sign_in(SignInCommand('person@example.test','correct','request'))
     sessions.logout_all(old.access_token, 'request')
     assert sessions.current(new.access_token, 'request').session_id == new.session_id
 
@@ -305,6 +305,6 @@ def test_failed_rehash_cannot_create_session_or_commit():
         raise AuthenticationCryptographyError('Password hashing failed')
     sessions._password_hasher.hash = failed_rehash
     with pytest.raises(AuthenticationCryptographyError):
-        sessions.sign_in(SignInCommand('person@example.test','correct',False,'request'))
+        sessions.sign_in(SignInCommand('person@example.test','correct','request'))
     assert state.commits == 0 and not state.sessions.records
     assert state.accounts.account == state.account

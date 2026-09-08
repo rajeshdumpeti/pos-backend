@@ -185,8 +185,9 @@ Milestone 07-02 applies them to authentication persistence.
 The first public authentication API, password/email policy, verification
 lifecycle, encrypted outbox, and operational diagnosis are documented in
 [email registration and verification](docs/email-registration-verification.md).
-The mobile integration contract and UX-state mapping are in the
-[frontend registration handoff](docs/frontend-auth-registration-handoff.md).
+The authoritative mobile integration contract and complete UX-state mapping are
+in [Authentication Contract v1.0.0](docs/frontend-authentication-handoff.md).
+Earlier feature-specific frontend handoffs are retained as historical milestone evidence.
 Email sign-in, rotating refresh sessions, logout, and the draft mobile contract
 are documented in [session lifecycle](docs/email-sign-in-session-lifecycle.md)
 and [frontend session handoff](docs/frontend-auth-session-handoff.md).
@@ -207,5 +208,5 @@ for the canonical threat model, exact admission policy, Redis/local settings,
 trusted proxies, secure server flags and guarded verification prerequisites.
 The [frontend security handoff](docs/frontend-auth-security-handoff.md) defines
 429 handling, privacy-safe states and session-expired navigation requirements.
-Google, Apple and biometrics are deferred to a later MVP. 07-09 remains the final
-authentication contract and release-handoff milestone.
+Google, Apple and biometrics are deferred to a later MVP. Milestone 07-09 freezes
+the email/password contract as v1.0.0; generated OpenAPI carries the same version.

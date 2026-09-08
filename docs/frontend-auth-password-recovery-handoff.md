@@ -1,5 +1,8 @@
 # Frontend handoff: password recovery
 
+> Historical milestone handoff. The authoritative frozen v1.0.0 contract is
+> [the consolidated authentication handoff](frontend-authentication-handoff.md).
+
 ## Request instructions
 
 `POST /api/v1/auth/password-resets`

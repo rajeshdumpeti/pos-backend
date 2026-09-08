@@ -1,10 +1,14 @@
 """FastAPI application composition and ASGI entry point."""
 
 from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
 from app.api import create_api_router, register_exception_handlers
 from app.application import MockResourceService, ResourceUnitOfWorkFactory
-from app.application.email_registration import EmailRegistrationService
+from app.application.email_registration import (
+    EmailRegistrationService,
+    RegistrationPolicyResult,
+)
 from app.application.session_lifecycle import EmailSessionService
 from app.application.password_recovery import PasswordRecoveryService
 from app.config import Settings, load_settings
@@ -23,6 +27,9 @@ from app.infrastructure.authentication.registration import (
 from app.infrastructure.authentication.session_composition import compose_email_sessions
 from app.infrastructure.authentication.password_recovery_composition import compose_password_recovery
 from app.infrastructure.database import dispose_database_engine
+
+
+AUTHENTICATION_CONTRACT_VERSION = "1.0.0"
 
 
 def create_app(
@@ -69,6 +76,7 @@ def create_app(
                 if authentication_composition is None
                 else authentication_composition.engine
             ),
+            verification_continuation=email_registration_service,
         )
         if session_composition is not None:
             email_session_service = session_composition.service
@@ -91,8 +99,32 @@ def create_app(
             authentication_availability_diagnostic,
             email_session_service,
             password_recovery_service,
+            (
+                RegistrationPolicyResult(
+                    terms_version=resolved_settings.current_terms_version,
+                    privacy_version=resolved_settings.current_privacy_version,
+                )
+                if resolved_settings.current_terms_version is not None
+                and resolved_settings.current_privacy_version is not None
+                else None
+            ),
         )
     )
+
+    def authentication_contract_openapi() -> dict[str, object]:
+        if application.openapi_schema is None:
+            schema = get_openapi(
+                title=application.title,
+                version=application.version,
+                routes=application.routes,
+            )
+            schema["x-pos-authentication-contract-version"] = (
+                AUTHENTICATION_CONTRACT_VERSION
+            )
+            application.openapi_schema = schema
+        return application.openapi_schema
+
+    application.openapi = authentication_contract_openapi
     if authentication_composition is not None:
         application.add_event_handler(
             "shutdown",

@@ -15,6 +15,7 @@ class AbusePolicy:
 
 
 DEFAULT_POLICIES = {
+    "registration_policy": AbusePolicy(120, 0, 60),
     "registration": AbusePolicy(20, 5, 900),
     "verification_confirm": AbusePolicy(60, 10, 600),
     "verification_resend": AbusePolicy(30, 5, 600),

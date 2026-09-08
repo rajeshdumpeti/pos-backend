@@ -45,6 +45,10 @@ class RegistrationInputRejectedError(RegistrationVerificationError):
     pass
 
 
+class LegalAcceptanceOutdatedError(RegistrationVerificationError):
+    pass
+
+
 class PasswordRejectedError(RegistrationVerificationError):
     pass
 
@@ -66,7 +70,13 @@ class VerificationCodeExpiredError(RegistrationVerificationError):
 
 
 class VerificationAttemptsExceededError(RegistrationVerificationError):
-    pass
+    def __init__(
+        self,
+        message: str = "Verification attempts were exceeded",
+        retry_after_seconds: int = 60,
+    ) -> None:
+        super().__init__(message)
+        self.retry_after_seconds = max(1, min(3600, retry_after_seconds))
 
 
 class AccountAlreadyExistsError(RegistrationVerificationError):
@@ -114,6 +124,14 @@ class FlowTokenLookup:
 
 
 @dataclass(frozen=True, slots=True)
+class IssuedFlowToken:
+    token: str = field(repr=False)
+    digest: str = field(repr=False)
+    key_id: str
+    key_version: int
+
+
+@dataclass(frozen=True, slots=True)
 class IssuedVerificationMaterial:
     flow_token: str = field(repr=False)
     flow_token_digest: str = field(repr=False)
@@ -131,6 +149,7 @@ class VerificationMaterialProvider(Protocol):
     def verify_code(
         self, challenge: EmailVerificationChallengeRecord, code: str
     ) -> bool: ...
+    def issue_flow_token(self) -> IssuedFlowToken: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -227,6 +246,20 @@ class PendingVerificationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class VerificationContinuationResult:
+    flow_token: str = field(repr=False)
+    masked_email: str
+    expires_at: datetime
+    resend_available_at: datetime
+
+
+@dataclass(frozen=True, slots=True)
+class RegistrationPolicyResult:
+    terms_version: str
+    privacy_version: str
+
+
+@dataclass(frozen=True, slots=True)
 class EmailVerifiedResult:
     status: str
     account_id: UUID
@@ -268,13 +301,13 @@ class EmailRegistrationService:
         display_name = command.display_name.strip()
         if not display_name or len(display_name) > 160:
             raise RegistrationInputRejectedError("Registration input was rejected")
+        if not command.terms_accepted or not command.privacy_accepted:
+            raise RegistrationInputRejectedError("Legal acceptance is required")
         if (
-            not command.terms_accepted
-            or not command.privacy_accepted
-            or command.terms_version != self._policy.terms_version
+            command.terms_version != self._policy.terms_version
             or command.privacy_version != self._policy.privacy_version
         ):
-            raise RegistrationInputRejectedError("Legal acceptance is required")
+            raise LegalAcceptanceOutdatedError("Legal acceptance is outdated")
         self._require_password(command.password)
         password_hash = self._password_hasher.hash(command.password)
 
@@ -310,6 +343,71 @@ class EmailRegistrationService:
                 )
             raise
 
+    def registration_policy(self) -> RegistrationPolicyResult:
+        """Return only the approved public legal document identifiers."""
+        return RegistrationPolicyResult(
+            terms_version=self._policy.terms_version,
+            privacy_version=self._policy.privacy_version,
+        )
+
+    def issue_sign_in_continuation(
+        self,
+        unit: AuthenticationUnitOfWork,
+        account: UserAccountRecord,
+        identity: EmailIdentityRecord,
+        request_id: str,
+        now: datetime,
+    ) -> VerificationContinuationResult:
+        """Create or resume verification inside the caller's locked transaction."""
+        current = unit.verification_challenges.get_current_for_update(
+            account.id, ChallengePurpose.REGISTRATION
+        )
+        if current is not None and now < current.flow_expires_at:
+            issued = self._verification_material.issue_flow_token()
+            if not unit.verification_challenges.rotate_flow_token(
+                current.id,
+                current.status_version,
+                issued.digest,
+                issued.key_id,
+                issued.key_version,
+            ):
+                raise ConcurrentPersistenceUpdateError(
+                    "Verification challenge changed concurrently"
+                )
+            result = VerificationContinuationResult(
+                flow_token=issued.token,
+                masked_email=mask_email(identity.display_email),
+                expires_at=current.flow_expires_at,
+                resend_available_at=current.resend_available_at,
+            )
+        else:
+            pending = self._replace_challenge(
+                unit,
+                current,
+                account.id,
+                ChallengePurpose.REGISTRATION,
+                ChallengeCompletionAction.ACTIVATE_ACCOUNT,
+                identity.display_email,
+                identity.normalized_email,
+                request_id,
+                now,
+            )
+            result = VerificationContinuationResult(
+                flow_token=pending.flow_token,
+                masked_email=pending.masked_email,
+                expires_at=pending.flow_expires_at,
+                resend_available_at=pending.resend_available_at,
+            )
+        unit.security_events.append(
+            self._security_event(
+                "unverified_sign_in_continuation_issued",
+                request_id,
+                now,
+                account.id,
+            )
+        )
+        return result
+
     def confirm(self, command: ConfirmEmailCommand) -> EmailVerifiedResult:
         lookup = self._lookup_flow(command.flow_token)
         now = self._clock()
@@ -331,7 +429,9 @@ class EmailRegistrationService:
                     raise VerificationFlowInvalidError("Verification flow is invalid")
                 if challenge.attempts >= challenge.max_attempts:
                     raise VerificationAttemptsExceededError(
-                        "Verification attempts were exceeded"
+                        retry_after_seconds=ceil(
+                            (challenge.flow_expires_at - now).total_seconds()
+                        )
                     )
                 if now >= challenge.expires_at:
                     raise VerificationCodeExpiredError("Verification code expired")
@@ -360,7 +460,9 @@ class EmailRegistrationService:
                     unit.commit()
                     if attempts >= challenge.max_attempts:
                         deferred_error = VerificationAttemptsExceededError(
-                            "Verification attempts were exceeded"
+                            retry_after_seconds=ceil(
+                                (challenge.flow_expires_at - now).total_seconds()
+                            )
                         )
                     else:
                         deferred_error = VerificationCodeInvalidError(

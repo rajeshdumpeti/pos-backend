@@ -11,8 +11,10 @@ from app.api.authentication_schemas import (
     ChangeUnverifiedEmailRequest,
     ConfirmEmailRequest,
     EmailVerifiedResponse,
+    EmailNotVerifiedResponse,
     PendingVerificationResponse,
     RegistrationRequest,
+    RegistrationPolicyResponse,
     ResendVerificationRequest,
     SignInRequest,
     RefreshSessionRequest,
@@ -29,6 +31,7 @@ from app.application.email_registration import (
     EmailRegistrationService,
     RegisterAccountCommand,
     RegistrationDependencyUnavailableError,
+    RegistrationPolicyResult,
     ResendVerificationCommand,
 )
 from app.core import REQUEST_ID_HEADER, get_request_id
@@ -52,27 +55,44 @@ def _responses(*status_codes: int) -> dict[int, dict[str, Any]]:
         415: "The authentication request must use JSON.",
         401: "Authentication credentials are invalid or expired.",
         403: "The account cannot establish a session.",
-        409: "Email ownership was proved for an existing account.",
+        409: "The request conflicts with current authentication state.",
         410: "The verification code or flow expired.",
         422: "The request or legal acceptance could not be validated.",
         429: "Authentication admission, verification attempts, or resend cooldown was exceeded.",
         500: "An unexpected safe internal failure occurred.",
         503: "A required persistence or cryptographic dependency is unavailable.",
     }
-    return {
+    responses = {
         code: {
             "description": descriptions[code],
             "model": AuthenticationErrorResponse,
             "headers": {
-                "Retry-After": {"description": "Bounded delay in seconds when throttled.", "schema": {"type": "integer", "minimum": 1, "maximum": 3600}},
                 REQUEST_ID_HEADER: {
                     "description": "Request identifier for support and diagnostics.",
                     "schema": {"type": "string"},
                 }
             },
         }
-        for code in sorted(set(status_codes) | {400, 401, 413, 415, 422, 429})
+        for code in sorted(set(status_codes))
     }
+    if 429 in responses:
+        responses[429]["headers"]["Retry-After"] = {
+            "description": "Bounded delay in seconds when throttled.",
+            "schema": {"type": "integer", "minimum": 1, "maximum": 3600},
+        }
+    return responses
+
+
+def _sign_in_responses() -> dict[int, dict[str, Any]]:
+    responses = _responses(
+        400, 401, 403, 413, 415, 422, 429, 500, 503
+    )
+    responses[403] = {
+        "description": "Correct credentials require email verification or the account is unavailable.",
+        "model": EmailNotVerifiedResponse | AuthenticationErrorResponse,
+        "headers": responses[403]["headers"],
+    }
+    return responses
 
 
 def create_authentication_router(
@@ -80,6 +100,7 @@ def create_authentication_router(
     availability_diagnostic: AuthenticationAvailabilityDiagnostic,
     session_service: EmailSessionService | None = None,
     password_recovery_service: PasswordRecoveryService | None = None,
+    registration_policy: RegistrationPolicyResult | None = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api/v1/auth", tags=["Authentication"])
     bearer = HTTPBearer(auto_error=False)
@@ -128,13 +149,31 @@ def create_authentication_router(
             raise AuthenticationRequiredError("Authentication is required")
         return credentials.credentials
 
+    @router.get(
+        "/registration-policy",
+        operation_id="get_authentication_registration_policy",
+        summary="Get current registration legal versions",
+        response_model=RegistrationPolicyResponse,
+        responses=_responses(400, 401, 413, 415, 422, 429, 500, 503),
+    )
+    def get_registration_policy(request: Request) -> RegistrationPolicyResponse:
+        if registration_policy is None:
+            availability_diagnostic.emit_configuration_incomplete(
+                operation="registration_policy",
+                request_id=get_request_id(request),
+            )
+            raise RegistrationDependencyUnavailableError(
+                "Registration policy is unavailable"
+            )
+        return RegistrationPolicyResponse(**asdict(registration_policy))
+
     @router.post(
         "/registrations",
         operation_id="create_email_registration",
         summary="Create an email registration",
         status_code=status.HTTP_202_ACCEPTED,
         response_model=PendingVerificationResponse,
-        responses=_responses(400, 422, 429, 500, 503),
+        responses=_responses(400, 401, 409, 413, 415, 422, 429, 500, 503),
     )
     def register(
         payload: RegistrationRequest, request: Request
@@ -159,7 +198,7 @@ def create_authentication_router(
         summary="Confirm an email verification code",
         status_code=status.HTTP_201_CREATED,
         response_model=EmailVerifiedResponse,
-        responses=_responses(400, 409, 410, 422, 429, 500, 503),
+        responses=_responses(400, 401, 409, 410, 413, 415, 422, 429, 500, 503),
     )
     def confirm(
         payload: ConfirmEmailRequest, request: Request
@@ -181,7 +220,7 @@ def create_authentication_router(
         summary="Resend an email verification code",
         status_code=status.HTTP_202_ACCEPTED,
         response_model=PendingVerificationResponse,
-        responses=_responses(400, 410, 422, 429, 500, 503),
+        responses=_responses(400, 401, 410, 413, 415, 422, 429, 500, 503),
     )
     def resend(
         payload: ResendVerificationRequest, request: Request
@@ -202,7 +241,7 @@ def create_authentication_router(
         summary="Change an unverified registration email",
         status_code=status.HTTP_202_ACCEPTED,
         response_model=PendingVerificationResponse,
-        responses=_responses(400, 410, 422, 429, 500, 503),
+        responses=_responses(400, 401, 410, 413, 415, 422, 429, 500, 503),
     )
     def change_email(
         payload: ChangeUnverifiedEmailRequest, request: Request
@@ -224,14 +263,13 @@ def create_authentication_router(
         summary="Sign in with a verified email account",
         description="Verifies email and password, then creates one rotating refresh session.",
         response_model=SessionTokenResponse,
-        responses=_responses(401, 403, 500, 503),
+        responses=_sign_in_responses(),
     )
     def sign_in(payload: SignInRequest, request: Request, response: Response) -> SessionTokenResponse:
         result = require_session_service(operation="email_sign_in", request=request).sign_in(
             SignInCommand(
                 email=payload.email,
                 password=payload.password.get_secret_value(),
-                remember_me=payload.remember_me,
                 request_id=get_request_id(request),
             )
         )
@@ -245,7 +283,7 @@ def create_authentication_router(
         summary="Rotate a refresh token",
         description="Atomically rotates one refresh token; retries must reuse Idempotency-Key.",
         response_model=SessionTokenResponse,
-        responses=_responses(400, 401, 409, 500, 503),
+        responses=_responses(400, 401, 409, 413, 415, 422, 429, 500, 503),
     )
     def refresh(
         payload: RefreshSessionRequest,
@@ -272,7 +310,7 @@ def create_authentication_router(
         summary="Get the current authenticated identity and session",
         description="Validates the access token and persisted session before restoring identity facts.",
         response_model=CurrentSessionResponse,
-        responses=_responses(401, 500, 503),
+        responses=_responses(400, 401, 413, 415, 422, 429, 500, 503),
     )
     def current_session(
         request: Request,
@@ -289,7 +327,7 @@ def create_authentication_router(
         summary="Log out the current session",
         description="Idempotently revokes the current refresh session.",
         status_code=status.HTTP_204_NO_CONTENT,
-        responses=_responses(401, 500, 503),
+        responses=_responses(400, 401, 413, 415, 422, 429, 500, 503),
     )
     def logout_current(
         request: Request,
@@ -306,7 +344,7 @@ def create_authentication_router(
         summary="Log out every session for the current account",
         description="Idempotently revokes every active refresh session for the account.",
         status_code=status.HTTP_204_NO_CONTENT,
-        responses=_responses(401, 500, 503),
+        responses=_responses(400, 401, 413, 415, 422, 429, 500, 503),
     )
     def logout_all(
         request: Request,
@@ -323,7 +361,7 @@ def create_authentication_router(
         summary="Request password reset instructions",
         status_code=status.HTTP_202_ACCEPTED,
         response_model=PasswordResetAcceptedResponse,
-        responses=_responses(500, 503),
+        responses=_responses(400, 401, 413, 415, 422, 500, 503),
     )
     def request_password_reset(
         payload: PasswordResetRequest, request: Request, response: Response
@@ -344,7 +382,7 @@ def create_authentication_router(
         operation_id="confirm_password_reset",
         summary="Confirm a password reset",
         status_code=status.HTTP_204_NO_CONTENT,
-        responses=_responses(400, 410, 500, 503),
+        responses=_responses(400, 401, 410, 413, 415, 422, 429, 500, 503),
     )
     def confirm_password_reset(
         payload: ConfirmPasswordResetRequest, request: Request

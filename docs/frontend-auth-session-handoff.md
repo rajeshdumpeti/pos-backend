@@ -1,5 +1,8 @@
 # Frontend handoff: email sign-in and sessions
 
+> Historical milestone handoff. The authoritative frozen v1.0.0 contract is
+> [the consolidated authentication handoff](frontend-authentication-handoff.md).
+
 This draft contract is for POS mobile coordination. Backend implementation is
 present; frontend integration is not part of Milestone 07-04.
 

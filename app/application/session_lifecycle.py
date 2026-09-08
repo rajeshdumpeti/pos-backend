@@ -9,8 +9,13 @@ from uuid import UUID, uuid4
 from app.application.authentication_persistence import (
     AuthenticationPersistenceUnavailableError,
     AuthenticationUnitOfWork,
+    DuplicateRefreshRequestIdError,
 )
-from app.application.email_registration import EmailNormalizer, PasswordHasher
+from app.application.email_registration import (
+    EmailNormalizer,
+    PasswordHasher,
+    VerificationContinuationResult,
+)
 from app.domain.authentication import (
     AccountId,
     AccountStatus,
@@ -18,6 +23,8 @@ from app.domain.authentication import (
     RefreshSessionId,
     RefreshSessionRecord,
     SecurityEventRecord,
+    EmailIdentityRecord,
+    UserAccountRecord,
 )
 
 
@@ -30,7 +37,9 @@ class InvalidCredentialsError(SessionLifecycleError):
 
 
 class EmailNotVerifiedError(SessionLifecycleError):
-    pass
+    def __init__(self, continuation: VerificationContinuationResult) -> None:
+        super().__init__("Email verification is required")
+        self.continuation = continuation
 
 
 class AccountUnavailableError(SessionLifecycleError):
@@ -58,6 +67,10 @@ class RefreshSessionExpiredError(SessionLifecycleError):
 
 
 class RefreshSessionReplayedError(SessionLifecycleError):
+    pass
+
+
+class RefreshIdempotencyConflictError(SessionLifecycleError):
     pass
 
 
@@ -97,7 +110,6 @@ class RefreshReceiptCipher(Protocol):
 class SessionPolicy:
     access_lifetime: timedelta = timedelta(minutes=10)
     refresh_lifetime: timedelta = timedelta(days=7)
-    remembered_refresh_lifetime: timedelta = timedelta(days=30)
     retry_receipt_lifetime: timedelta = timedelta(minutes=5)
 
 
@@ -105,14 +117,13 @@ class SessionPolicy:
 class SignInCommand:
     email: str = field(repr=False)
     password: str = field(repr=False)
-    remember_me: bool
     request_id: str
 
 
 @dataclass(frozen=True, slots=True)
 class RefreshCommand:
     refresh_token: str = field(repr=False)
-    refresh_request_id: str
+    refresh_request_id: str = field(repr=False)
     request_id: str
 
 
@@ -156,6 +167,17 @@ class SessionEventLogger(Protocol):
     ) -> None: ...
 
 
+class VerificationContinuationIssuer(Protocol):
+    def issue_sign_in_continuation(
+        self,
+        unit: AuthenticationUnitOfWork,
+        account: UserAccountRecord,
+        identity: EmailIdentityRecord,
+        request_id: str,
+        now: datetime,
+    ) -> VerificationContinuationResult: ...
+
+
 class EmailSessionService:
     """Own sign-in, rotation, validation, and revocation transactions."""
 
@@ -170,6 +192,7 @@ class EmailSessionService:
         dummy_password_hash: str,
         policy: SessionPolicy = SessionPolicy(),
         *,
+        verification_continuation: VerificationContinuationIssuer | None = None,
         event_logger: SessionEventLogger | None = None,
         clock: Callable[[], datetime] | None = None,
         identifier_factory: Callable[[], UUID] = uuid4,
@@ -182,11 +205,20 @@ class EmailSessionService:
         self._receipt_cipher = receipt_cipher
         self._dummy_password_hash = dummy_password_hash
         self._policy = policy
+        self._verification_continuation = verification_continuation
         self._event_logger = event_logger
         self._clock = clock or (lambda: datetime.now(UTC))
         self._identifier_factory = identifier_factory
 
     def sign_in(self, command: SignInCommand) -> SessionTokenResult:
+        result = self._sign_in(command)
+        if isinstance(result, EmailNotVerifiedError):
+            raise result
+        return result
+
+    def _sign_in(
+        self, command: SignInCommand
+    ) -> SessionTokenResult | EmailNotVerifiedError:
         if not 1 <= len(command.password) <= 1024 or len(command.email) > 320:
             raise InvalidCredentialsError("Email or password is invalid")
         try:
@@ -213,9 +245,33 @@ class EmailSessionService:
                 if account is None or identity is None or not password_valid:
                     self._diagnostic("email_sign_in_failed", "email_sign_in", "rejected", command.request_id, "invalid_credentials")
                     raise InvalidCredentialsError("Email or password is invalid")
-                if account.status is AccountStatus.PENDING_VERIFICATION or not identity.is_verified:
-                    self._diagnostic("email_sign_in_failed", "email_sign_in", "rejected", command.request_id, "email_not_verified", account.id)
-                    raise EmailNotVerifiedError("Email verification is required")
+                if (
+                    account.status is AccountStatus.PENDING_VERIFICATION
+                    and not identity.is_verified
+                    and account.email_verified_at is None
+                ):
+                    if self._verification_continuation is None:
+                        raise SessionDependencyUnavailableError(
+                            "Verification continuation is unavailable"
+                        )
+                    continuation = self._verification_continuation.issue_sign_in_continuation(
+                        unit, account, identity, command.request_id, now
+                    )
+                    unit.commit()
+                    unverified_account_id = account.id
+                else:
+                    continuation = None
+                    unverified_account_id = None
+                if continuation is not None:
+                    self._diagnostic(
+                        "email_sign_in_failed",
+                        "email_sign_in",
+                        "rejected",
+                        command.request_id,
+                        "email_not_verified",
+                        unverified_account_id,
+                    )
+                    return EmailNotVerifiedError(continuation)
                 if account.status is not AccountStatus.ACTIVE:
                     self._diagnostic("email_sign_in_failed", "email_sign_in", "rejected", command.request_id, "account_unavailable", account.id)
                     raise AccountUnavailableError("Account is unavailable")
@@ -227,17 +283,13 @@ class EmailSessionService:
                 session_id = RefreshSessionId(self._identifier_factory())
                 family_id = self._identifier_factory()
                 refresh_token = self._refresh_tokens.issue()
-                refresh_expires_at = now + (
-                    self._policy.remembered_refresh_lifetime
-                    if command.remember_me
-                    else self._policy.refresh_lifetime
-                )
+                refresh_expires_at = now + self._policy.refresh_lifetime
                 session = RefreshSessionRecord(
                     id=session_id,
                     user_account_id=account.id,
                     token_family_id=family_id,
                     current_token_digest=self._refresh_tokens.digest(refresh_token),
-                    remember_me=command.remember_me,
+                    remember_me=False,
                     authentication_epoch=account.authentication_epoch,
                     created_at=now,
                     last_used_at=now,
@@ -271,6 +323,18 @@ class EmailSessionService:
         digest = self._refresh_tokens.digest(command.refresh_token)
         try:
             with self._unit_of_work_factory(command.request_id) as unit:
+                idempotency_receipt = (
+                    unit.refresh_receipts.get_by_request_id_for_update(
+                        command.refresh_request_id
+                    )
+                )
+                if (
+                    idempotency_receipt is not None
+                    and idempotency_receipt.previous_token_digest != digest
+                ):
+                    raise RefreshIdempotencyConflictError(
+                        "Refresh idempotency key conflicts with another request"
+                    )
                 session = unit.refresh_sessions.get_by_token_digest_for_update(digest)
                 if session is None:
                     receipt = unit.refresh_receipts.get_by_previous_digest_for_update(digest)
@@ -352,6 +416,10 @@ class EmailSessionService:
                 unit.commit()
                 self._diagnostic("refresh_token_rotated", "refresh_session", "succeeded", command.request_id, account_id=account.id, session_id=session.id)
                 return result
+        except DuplicateRefreshRequestIdError:
+            raise RefreshIdempotencyConflictError(
+                "Refresh idempotency key conflicts with another request"
+            ) from None
         except AuthenticationPersistenceUnavailableError as error:
             raise SessionDependencyUnavailableError("Session dependency is unavailable") from error
 
