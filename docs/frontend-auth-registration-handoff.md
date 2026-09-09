@@ -105,19 +105,19 @@ the first verification-code cell. The old flow is unusable.
 
 ## Error and UX mapping
 
-| Code | HTTP | UX behavior |
-|---|---:|---|
-| `request_validation_failed` | 422 | Map safe field details inline; never echo sensitive input. |
-| `password_rejected` | 400 | Announce password requirements/rejection and focus password. |
-| `verification_flow_invalid` | 400 | Clear unusable flow and offer restart/back. |
-| `verification_flow_expired` | 410 | Show flow-expired state and restart registration. |
-| `verification_code_invalid` | 400 | Inline invalid-code state; clear code and refocus. |
-| `verification_code_expired` | 410 | Show Code Expired and offer resend. |
-| `verification_attempts_exceeded` | 429 | Show Too Many Attempts; do not retry confirmation. |
-| `resend_cooldown_active` | 429 | Continue approved countdown from `retry_at`/`retry_after_seconds`. |
-| `account_already_exists` | 409 | Offer only actions returned: Sign In or Forgot Password. |
-| `dependency_unavailable` | 503 | Retry-safe unavailable/offline presentation; retain form locally. |
-| `internal_server_error` | 500 | Generic retry/support message with request ID. |
+| Code                             | HTTP | UX behavior                                                        |
+| -------------------------------- | ---: | ------------------------------------------------------------------ |
+| `request_validation_failed`      |  422 | Map safe field details inline; never echo sensitive input.         |
+| `password_rejected`              |  400 | Announce password requirements/rejection and focus password.       |
+| `verification_flow_invalid`      |  400 | Clear unusable flow and offer restart/back.                        |
+| `verification_flow_expired`      |  410 | Show flow-expired state and restart registration.                  |
+| `verification_code_invalid`      |  400 | Inline invalid-code state; clear code and refocus.                 |
+| `verification_code_expired`      |  410 | Show Code Expired and offer resend.                                |
+| `verification_attempts_exceeded` |  429 | Show Too Many Attempts; do not retry confirmation.                 |
+| `resend_cooldown_active`         |  429 | Continue approved countdown from `retry_at`/`retry_after_seconds`. |
+| `account_already_exists`         |  409 | Offer only actions returned: Sign In or Forgot Password.           |
+| `dependency_unavailable`         |  503 | Retry-safe unavailable/offline presentation; retain form locally.  |
+| `internal_server_error`          |  500 | Generic retry/support message with request ID.                     |
 
 A transport/network failure maps to the approved Offline state and is not an
 authentication error. Do not discard user-entered non-secret fields. Passwords
