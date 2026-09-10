@@ -30,7 +30,7 @@ support mobile UI development but do not define the final production API.
 `/docs` and `/openapi.json` remain local framework endpoints. The dynamic mock
 routes intentionally retain their existing unversioned paths and fixture shapes.
 The exact authentication status inventory and client transitions are frozen in
-[Authentication Contract v1.0.0](frontend-authentication-handoff.md) and enforced
+[Authentication Contract v1.1.0](frontend-authentication-handoff.md) and enforced
 against generated OpenAPI by contract tests.
 
 ## Request and response conventions
@@ -156,7 +156,7 @@ changes must preserve it or follow an explicit coordinated migration. Do not
 duplicate the version tree. Every contract change requires an OpenAPI diff
 review.
 Generated OpenAPI publishes top-level
-`x-pos-authentication-contract-version: 1.0.0`. Frontend builds must pin both the
+`x-pos-authentication-contract-version: 1.1.0`. Frontend builds must pin both the
 reviewed backend commit and this contract version.
 
 ## Pagination policy

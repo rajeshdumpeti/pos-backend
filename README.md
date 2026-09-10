@@ -156,8 +156,8 @@ setup script would duplicate them without adding a stable prerequisite check.
 ## Current limitations
 
 Generic mock API mutations remain in memory and reset when the server restarts.
-Email registration is composed only when its complete PostgreSQL, key, and
-legal-version configuration is present; partial configuration never selects an
+Email registration is composed only when its complete PostgreSQL/key configuration
+and an explicit valid legal-policy mode are present; partial configuration never selects an
 ambiguous adapter. Email sessions are independently composed only when
 PostgreSQL, JWT signing, and refresh-receipt encryption are configured.
 Application import, health, Swagger, and the mock endpoints
@@ -186,7 +186,9 @@ The first public authentication API, password/email policy, verification
 lifecycle, encrypted outbox, and operational diagnosis are documented in
 [email registration and verification](docs/email-registration-verification.md).
 The authoritative mobile integration contract and complete UX-state mapping are
-in [Authentication Contract v1.0.0](docs/frontend-authentication-handoff.md).
+in [Authentication Contract v1.1.0](docs/frontend-authentication-handoff.md).
+The environment-aware registration policy and frontend branching rules are in
+[the 07-03A registration handoff](docs/frontend-auth-registration-verification-handoff.md).
 Earlier feature-specific frontend handoffs are retained as historical milestone evidence.
 Email sign-in, rotating refresh sessions, logout, and the draft mobile contract
 are documented in [session lifecycle](docs/email-sign-in-session-lifecycle.md)

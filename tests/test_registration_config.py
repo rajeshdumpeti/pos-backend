@@ -23,7 +23,10 @@ def test_example_environment_keeps_registration_secrets_and_local_access_safe():
     assert values["JWT_SECRET"] == ""
     assert values["AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY"] == ""
     assert values["CURRENT_TERMS_VERSION"] == ""
+    assert values["CURRENT_TERMS_URL"] == ""
     assert values["CURRENT_PRIVACY_VERSION"] == ""
+    assert values["CURRENT_PRIVACY_URL"] == ""
+    assert values["AUTH_LEGAL_CONSENT_MODE"] == "required"
     assert values["AUTH_LOCAL_EMAIL_INSPECTION_ENABLED"] == "false"
 
 
@@ -34,7 +37,9 @@ def test_registration_secrets_are_masked_and_policy_is_frozen():
             "AUTH_CHALLENGE_DIGEST_KEY": DIGEST_KEY,
             "AUTH_OUTBOX_ENCRYPTION_KEY": OUTBOX_KEY,
             "CURRENT_TERMS_VERSION": "terms-test-v1",
+            "CURRENT_TERMS_URL": "http://localhost/legal/terms",
             "CURRENT_PRIVACY_VERSION": "privacy-test-v1",
+            "CURRENT_PRIVACY_URL": "http://localhost/legal/privacy",
         }
     )
     rendered = repr(settings)

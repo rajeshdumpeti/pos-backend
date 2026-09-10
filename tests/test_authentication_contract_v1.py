@@ -1,4 +1,4 @@
-"""Database-independent Authentication Contract v1.0.0 freeze tests."""
+"""Database-independent Authentication Contract v1.1.0 freeze tests."""
 
 from dataclasses import replace
 from datetime import timedelta
@@ -165,7 +165,9 @@ def test_registration_policy_is_public_named_and_stale_versions_are_conflict():
     settings = load_settings(
         {
             "CURRENT_TERMS_VERSION": "terms-v1",
+            "CURRENT_TERMS_URL": "http://localhost/legal/terms",
             "CURRENT_PRIVACY_VERSION": "privacy-v1",
+            "CURRENT_PRIVACY_URL": "http://localhost/legal/privacy",
         }
     )
     api = TestClient(create_app(settings))
@@ -175,8 +177,12 @@ def test_registration_policy_is_public_named_and_stale_versions_are_conflict():
     )
     assert response.status_code == 200
     assert response.json() == {
+        "legal_consent_required": True,
+        "legal_policy_status": "active",
         "terms_version": "terms-v1",
+        "terms_url": "http://localhost/legal/terms",
         "privacy_version": "privacy-v1",
+        "privacy_url": "http://localhost/legal/privacy",
     }
     assert response.headers["X-Request-ID"] == "policy-v1"
     assert response.headers["Cache-Control"] == "no-store"
@@ -268,8 +274,8 @@ def test_refresh_same_key_with_different_material_is_conflict():
 
 def test_openapi_freezes_contract_version_and_named_schemas():
     schema = create_app(load_settings({})).openapi()
-    assert AUTHENTICATION_CONTRACT_VERSION == "1.0.0"
-    assert schema["x-pos-authentication-contract-version"] == "1.0.0"
+    assert AUTHENTICATION_CONTRACT_VERSION == "1.1.0"
+    assert schema["x-pos-authentication-contract-version"] == "1.1.0"
     names = schema["components"]["schemas"]
     for name in (
         "RegistrationPolicyResponse",

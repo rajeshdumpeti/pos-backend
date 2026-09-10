@@ -31,8 +31,8 @@ other values fail at application creation with an actionable error.
 - **Production:** future production runtime; no deployment exists yet.
 
 PostgreSQL and registration keys remain optional for mock-only local startup.
-Email registration is composed only when the database, both keys, and current
-legal versions are all configured. Email sessions are composed only when the
+Email registration is composed when the database and both keys are configured,
+plus either a complete required legal policy or explicit non-production deferred mode. Email sessions are composed only when the
 database, JWT signing secret, and refresh-receipt encryption key are configured.
 Password recovery is composed only when the database, challenge/outbox keys, and
 reset URL are configured. Authentication email delivery defaults to local,
@@ -76,6 +76,8 @@ and the server may be started without `--env-file .env`.
 | `AUTH_ARGON2_MEMORY_COST_KIB` | `65536` | Optional tuning | At least 19456 |
 | `AUTH_ARGON2_PARALLELISM` | `4` | Optional tuning | Positive integer |
 | `CURRENT_TERMS_VERSION` / `CURRENT_PRIVACY_VERSION` | unset | Required for registration/protected environments | 1–64 characters |
+| `CURRENT_TERMS_URL` / `CURRENT_PRIVACY_URL` | unset | Required in required mode | Reviewable HTTP(S) locally; approved HTTPS without placeholders when protected |
+| `AUTH_LEGAL_CONSENT_MODE` | `required` | Explicit for deferred behavior | `required` or `deferred_nonproduction`; deferred is forbidden when protected |
 | `AUTH_LOCAL_EMAIL_INSPECTION_ENABLED` | `false` | Local/development only | Explicit boolean |
 | `AUTH_EMAIL_PROVIDER` | `local` | Optional | `local` or `resend` |
 | `RESEND_API_KEY` | unset | Required only for `resend` | Secret value; never represented |
@@ -101,6 +103,11 @@ Do not print, log, serialize to an API response, or commit configuration values.
 Local secrets belong only in ignored environment files or the developer's
 process environment. Empty example values are intentional and must not be
 replaced with fake production credentials.
+
+Deferred mode stores no accepted legal versions or timestamps. Before staging
+or production, publish and review both legal documents, assign official
+versions, configure approved HTTPS URLs, select required mode, and rerun the
+protected-environment checks. Legal and store readiness remain release gates.
 
 See the repository [README](../../README.md) for setup and validation, and
 [secrets management](secrets-management.md) for handling and incident rules.

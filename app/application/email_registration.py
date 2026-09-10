@@ -4,6 +4,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from math import ceil
+from enum import StrEnum
 from typing import Protocol
 from uuid import UUID, uuid4
 
@@ -49,6 +50,14 @@ class LegalAcceptanceOutdatedError(RegistrationVerificationError):
     pass
 
 
+class LegalConsentRequiredError(RegistrationVerificationError):
+    pass
+
+
+class LegalConsentNotApplicableError(RegistrationVerificationError):
+    pass
+
+
 class PasswordRejectedError(RegistrationVerificationError):
     pass
 
@@ -84,6 +93,10 @@ class AccountAlreadyExistsError(RegistrationVerificationError):
 
 
 class RegistrationDependencyUnavailableError(RegistrationVerificationError):
+    pass
+
+
+class AuthenticationConfigurationUnavailableError(RegistrationVerificationError):
     pass
 
 
@@ -193,26 +206,38 @@ class AuthenticationAvailabilityDiagnostic(Protocol):
     ) -> None: ...
 
 
+class LegalPolicyStatus(StrEnum):
+    ACTIVE = "active"
+    DEFERRED_NONPRODUCTION = "deferred_nonproduction"
+
+
 @dataclass(frozen=True, slots=True)
 class RegistrationPolicy:
     code_lifetime: timedelta = timedelta(minutes=10)
     flow_lifetime: timedelta = timedelta(minutes=30)
     resend_cooldown: timedelta = timedelta(seconds=60)
     maximum_attempts: int = 5
-    terms_version: str = ""
-    privacy_version: str = ""
+    legal_consent_required: bool = True
+    legal_policy_status: LegalPolicyStatus = LegalPolicyStatus.ACTIVE
+    terms_version: str | None = None
+    terms_url: str | None = None
+    privacy_version: str | None = None
+    privacy_url: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
 class RegisterAccountCommand:
-    display_name: str
+    display_name: str = field(repr=False)
     email: str = field(repr=False)
     password: str = field(repr=False)
-    terms_accepted: bool
-    privacy_accepted: bool
-    terms_version: str
-    privacy_version: str
     request_id: str
+    terms_accepted: bool | None = field(default=None, repr=False)
+    privacy_accepted: bool | None = field(default=None, repr=False)
+    terms_version: str | None = field(default=None, repr=False)
+    privacy_version: str | None = field(default=None, repr=False)
+    legal_fields_supplied: frozenset[str] = field(
+        default_factory=frozenset, repr=False
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -255,8 +280,12 @@ class VerificationContinuationResult:
 
 @dataclass(frozen=True, slots=True)
 class RegistrationPolicyResult:
-    terms_version: str
-    privacy_version: str
+    legal_consent_required: bool
+    legal_policy_status: LegalPolicyStatus
+    terms_version: str | None
+    terms_url: str | None
+    privacy_version: str | None
+    privacy_url: str | None
 
 
 @dataclass(frozen=True, slots=True)
@@ -301,13 +330,24 @@ class EmailRegistrationService:
         display_name = command.display_name.strip()
         if not display_name or len(display_name) > 160:
             raise RegistrationInputRejectedError("Registration input was rejected")
-        if not command.terms_accepted or not command.privacy_accepted:
-            raise RegistrationInputRejectedError("Legal acceptance is required")
-        if (
-            command.terms_version != self._policy.terms_version
-            or command.privacy_version != self._policy.privacy_version
-        ):
-            raise LegalAcceptanceOutdatedError("Legal acceptance is outdated")
+        legal_fields = (
+            command.terms_accepted,
+            command.privacy_accepted,
+            command.terms_version,
+            command.privacy_version,
+        )
+        if self._policy.legal_consent_required:
+            if command.terms_accepted is not True or command.privacy_accepted is not True:
+                raise LegalConsentRequiredError("Legal consent is required")
+            if command.terms_version is None or command.privacy_version is None:
+                raise LegalConsentRequiredError("Legal consent is required")
+            if (
+                command.terms_version != self._policy.terms_version
+                or command.privacy_version != self._policy.privacy_version
+            ):
+                raise LegalAcceptanceOutdatedError("Legal acceptance is outdated")
+        elif command.legal_fields_supplied or any(value is not None for value in legal_fields):
+            raise LegalConsentNotApplicableError("Legal consent is not applicable")
         self._require_password(command.password)
         password_hash = self._password_hasher.hash(command.password)
 
@@ -344,10 +384,14 @@ class EmailRegistrationService:
             raise
 
     def registration_policy(self) -> RegistrationPolicyResult:
-        """Return only the approved public legal document identifiers."""
+        """Return the backend-authoritative public registration policy."""
         return RegistrationPolicyResult(
+            legal_consent_required=self._policy.legal_consent_required,
+            legal_policy_status=self._policy.legal_policy_status,
             terms_version=self._policy.terms_version,
+            terms_url=self._policy.terms_url,
             privacy_version=self._policy.privacy_version,
+            privacy_url=self._policy.privacy_url,
         )
 
     def issue_sign_in_continuation(
@@ -688,10 +732,22 @@ class EmailRegistrationService:
                     email_verified_at=None,
                     onboarding_required=True,
                     authentication_epoch=0,
-                    terms_version=command.terms_version,
-                    terms_accepted_at=now,
-                    privacy_version=command.privacy_version,
-                    privacy_accepted_at=now,
+                    terms_version=(
+                        command.terms_version
+                        if self._policy.legal_consent_required
+                        else None
+                    ),
+                    terms_accepted_at=(
+                        now if self._policy.legal_consent_required else None
+                    ),
+                    privacy_version=(
+                        command.privacy_version
+                        if self._policy.legal_consent_required
+                        else None
+                    ),
+                    privacy_accepted_at=(
+                        now if self._policy.legal_consent_required else None
+                    ),
                     created_at=now,
                     updated_at=now,
                 )

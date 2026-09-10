@@ -7,11 +7,12 @@ from app.api import create_api_router, register_exception_handlers
 from app.application import MockResourceService, ResourceUnitOfWorkFactory
 from app.application.email_registration import (
     EmailRegistrationService,
+    LegalPolicyStatus,
     RegistrationPolicyResult,
 )
 from app.application.session_lifecycle import EmailSessionService
 from app.application.password_recovery import PasswordRecoveryService
-from app.config import Settings, load_settings
+from app.config import AuthenticationLegalConsentMode, Settings, load_settings
 from app.core.authentication_security import AuthenticationSecurityMiddleware
 from app.infrastructure.authentication.abuse_control import compose_admission
 from app.infrastructure.authentication.registration import SafeAuthenticationEventLogger
@@ -29,7 +30,7 @@ from app.infrastructure.authentication.password_recovery_composition import comp
 from app.infrastructure.database import dispose_database_engine
 
 
-AUTHENTICATION_CONTRACT_VERSION = "1.0.0"
+AUTHENTICATION_CONTRACT_VERSION = "1.1.0"
 
 
 def create_app(
@@ -99,15 +100,53 @@ def create_app(
             authentication_availability_diagnostic,
             email_session_service,
             password_recovery_service,
-            (
-                RegistrationPolicyResult(
-                    terms_version=resolved_settings.current_terms_version,
-                    privacy_version=resolved_settings.current_privacy_version,
+            RegistrationPolicyResult(
+                legal_consent_required=(
+                    resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.REQUIRED
+                ),
+                legal_policy_status=(
+                    LegalPolicyStatus.ACTIVE
+                    if resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.REQUIRED
+                    else LegalPolicyStatus.DEFERRED_NONPRODUCTION
+                ),
+                terms_version=(
+                    resolved_settings.current_terms_version
+                    if resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.REQUIRED
+                    else None
+                ),
+                terms_url=(
+                    resolved_settings.current_terms_url
+                    if resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.REQUIRED
+                    else None
+                ),
+                privacy_version=(
+                    resolved_settings.current_privacy_version
+                    if resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.REQUIRED
+                    else None
+                ),
+                privacy_url=(
+                    resolved_settings.current_privacy_url
+                    if resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.REQUIRED
+                    else None
+                ),
+            )
+            if (
+                resolved_settings.auth_legal_consent_mode
+                is AuthenticationLegalConsentMode.DEFERRED_NONPRODUCTION
+                or (
+                    resolved_settings.current_terms_version is not None
+                    and resolved_settings.current_terms_url is not None
+                    and resolved_settings.current_privacy_version is not None
+                    and resolved_settings.current_privacy_url is not None
                 )
-                if resolved_settings.current_terms_version is not None
-                and resolved_settings.current_privacy_version is not None
-                else None
-            ),
+            )
+            else None,
         )
     )
 
