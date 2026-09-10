@@ -111,13 +111,16 @@ def test_database_enabled_composition_does_not_leak_into_later_settings(monkeypa
         "eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXl5eXk",
     )
     monkeypatch.setenv("CURRENT_TERMS_VERSION", "terms-test-v1")
+    monkeypatch.setenv("CURRENT_TERMS_URL", "http://localhost/legal/terms")
     monkeypatch.setenv("CURRENT_PRIVACY_VERSION", "privacy-test-v1")
+    monkeypatch.setenv("CURRENT_PRIVACY_URL", "http://localhost/legal/privacy")
     monkeypatch.setenv("AUTH_PASSWORD_RESET_URL", "https://app.example.test/reset")
     create_app()
 
     for name in (
         "DATABASE_URL", "AUTH_CHALLENGE_DIGEST_KEY", "AUTH_OUTBOX_ENCRYPTION_KEY",
-        "CURRENT_TERMS_VERSION", "CURRENT_PRIVACY_VERSION", "AUTH_PASSWORD_RESET_URL",
+        "CURRENT_TERMS_VERSION", "CURRENT_TERMS_URL", "CURRENT_PRIVACY_VERSION",
+        "CURRENT_PRIVACY_URL", "AUTH_LEGAL_CONSENT_MODE", "AUTH_PASSWORD_RESET_URL",
     ):
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("APP_ENV", "development")

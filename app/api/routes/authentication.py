@@ -25,6 +25,7 @@ from app.api.authentication_schemas import (
     ConfirmPasswordResetRequest,
 )
 from app.application.email_registration import (
+    AuthenticationConfigurationUnavailableError,
     AuthenticationAvailabilityDiagnostic,
     ChangeUnverifiedEmailCommand,
     ConfirmEmailCommand,
@@ -152,25 +153,40 @@ def create_authentication_router(
     @router.get(
         "/registration-policy",
         operation_id="get_authentication_registration_policy",
-        summary="Get current registration legal versions",
+        summary="Get the backend-authoritative registration legal policy",
+        description=(
+            "Fetch before registration. When consent is required, show both returned "
+            "documents and submit explicit acceptance with the returned versions. When "
+            "deferred_nonproduction, omit all four legal consent request fields. Refetch "
+            "after legal_acceptance_outdated."
+        ),
         response_model=RegistrationPolicyResponse,
         responses=_responses(400, 401, 413, 415, 422, 429, 500, 503),
     )
-    def get_registration_policy(request: Request) -> RegistrationPolicyResponse:
+    def get_registration_policy(
+        request: Request, response: Response
+    ) -> RegistrationPolicyResponse:
         if registration_policy is None:
             availability_diagnostic.emit_configuration_incomplete(
                 operation="registration_policy",
                 request_id=get_request_id(request),
             )
-            raise RegistrationDependencyUnavailableError(
-                "Registration policy is unavailable"
+            raise AuthenticationConfigurationUnavailableError(
+                "Registration policy configuration is unavailable"
             )
+        response.headers["Cache-Control"] = "no-store"
+        response.headers["Pragma"] = "no-cache"
         return RegistrationPolicyResponse(**asdict(registration_policy))
 
     @router.post(
         "/registrations",
         operation_id="create_email_registration",
         summary="Create an email registration",
+        description=(
+            "Legal consent fields are required only when the current registration policy "
+            "requires consent, and must be omitted when policy is deferred_nonproduction. "
+            "After legal_acceptance_outdated, refetch the policy before retrying."
+        ),
         status_code=status.HTTP_202_ACCEPTED,
         response_model=PendingVerificationResponse,
         responses=_responses(400, 401, 409, 413, 415, 422, 429, 500, 503),
@@ -188,6 +204,15 @@ def create_authentication_router(
                 terms_version=payload.terms_version,
                 privacy_version=payload.privacy_version,
                 request_id=get_request_id(request),
+                legal_fields_supplied=frozenset(
+                    payload.model_fields_set
+                    & {
+                        "terms_accepted",
+                        "privacy_accepted",
+                        "terms_version",
+                        "privacy_version",
+                    }
+                ),
             )
         )
         return PendingVerificationResponse(**asdict(result))

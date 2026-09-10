@@ -1,6 +1,6 @@
 # Email registration and verification
 
-Current frozen client contract: [Authentication Contract v1.0.0](frontend-authentication-handoff.md).
+Current client contract: [Authentication Contract v1.1.0](frontend-authentication-handoff.md).
 Earlier deferred-control notes below describe the milestone at its original delivery.
 
 Milestone 07-03 introduces POS's first public authentication capability. It is
@@ -32,7 +32,11 @@ The initial registration response is deliberately equivalent for new,
 pending, and active email identities. An active account is disclosed only
 after a valid code proves control of its mailbox. A repeated registration never
 changes an existing password, name, legal acceptance, or account state.
-Clients fetch current legal identifiers from `GET /registration-policy`.
+Clients fetch the backend-controlled legal mode, document URLs, and versions
+from `GET /registration-policy`. Required mode needs explicit acceptance of the
+exact current documents. In `deferred_nonproduction`, permitted only for local,
+development, and test, clients omit all legal fields and the transaction stores
+no consent evidence.
 Outdated submitted identifiers return `409 legal_acceptance_outdated` with
 action `refresh_registration_policy`; false acceptance booleans remain validation
 failures.
@@ -113,7 +117,8 @@ tickets, or reports.
 `.env.example` contains variable names and generation instructions only. The
 digest and encryption keys are separate URL-safe base64-encoded 256-bit values.
 Key IDs and positive versions are stored with records. Protected environments
-require the database URL, both keys, and current Terms and Privacy versions.
+require required mode, the database URL, both keys, non-placeholder Terms and
+Privacy versions, and approved HTTPS document URLs.
 Secrets are `SecretStr` values and are decoded only during infrastructure
 composition.
 

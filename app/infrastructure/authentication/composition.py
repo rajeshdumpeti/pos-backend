@@ -5,8 +5,12 @@ from datetime import timedelta
 
 from sqlalchemy import Engine
 
-from app.application.email_registration import EmailRegistrationService, RegistrationPolicy
-from app.config import Settings, decode_authentication_key
+from app.application.email_registration import (
+    EmailRegistrationService,
+    LegalPolicyStatus,
+    RegistrationPolicy,
+)
+from app.config import AuthenticationLegalConsentMode, Settings, decode_authentication_key
 from app.infrastructure.authentication.registration import (
     AesGcmOutboxCipher,
     Argon2idPasswordHasher,
@@ -35,8 +39,16 @@ def compose_email_registration(
         settings.database_url is None
         or settings.auth_challenge_digest_key is None
         or settings.auth_outbox_encryption_key is None
-        or settings.current_terms_version is None
-        or settings.current_privacy_version is None
+        or (
+            settings.auth_legal_consent_mode
+            is AuthenticationLegalConsentMode.REQUIRED
+            and (
+                settings.current_terms_version is None
+                or settings.current_terms_url is None
+                or settings.current_privacy_version is None
+                or settings.current_privacy_url is None
+            )
+        )
     ):
         return None
 
@@ -81,8 +93,20 @@ def compose_email_registration(
                 seconds=settings.verification_resend_cooldown_seconds
             ),
             maximum_attempts=settings.verification_max_attempts,
+            legal_consent_required=(
+                settings.auth_legal_consent_mode
+                is AuthenticationLegalConsentMode.REQUIRED
+            ),
+            legal_policy_status=(
+                LegalPolicyStatus.ACTIVE
+                if settings.auth_legal_consent_mode
+                is AuthenticationLegalConsentMode.REQUIRED
+                else LegalPolicyStatus.DEFERRED_NONPRODUCTION
+            ),
             terms_version=settings.current_terms_version,
+            terms_url=settings.current_terms_url,
             privacy_version=settings.current_privacy_version,
+            privacy_url=settings.current_privacy_url,
         ),
     )
     return AuthenticationComposition(service=service, engine=engine)

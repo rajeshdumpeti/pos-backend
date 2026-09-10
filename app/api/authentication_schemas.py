@@ -14,6 +14,8 @@ class AuthenticationRequest(BaseModel):
 
 
 class RegistrationRequest(AuthenticationRequest):
+    """Registration input; legal fields are conditional on the current policy."""
+
     model_config = ConfigDict(
         extra="forbid",
         hide_input_in_errors=True,
@@ -36,10 +38,26 @@ class RegistrationRequest(AuthenticationRequest):
         max_length=1024,
         json_schema_extra={"writeOnly": True},
     )
-    terms_accepted: bool
-    privacy_accepted: bool
-    terms_version: str = Field(min_length=1, max_length=64)
-    privacy_version: str = Field(min_length=1, max_length=64)
+    terms_accepted: bool | None = Field(
+        default=None,
+        description="Required and true only when legal_consent_required is true; otherwise omit.",
+    )
+    privacy_accepted: bool | None = Field(
+        default=None,
+        description="Required and true only when legal_consent_required is true; otherwise omit.",
+    )
+    terms_version: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="Current backend-provided Terms version when consent is required; otherwise omit.",
+    )
+    privacy_version: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=64,
+        description="Current backend-provided Privacy version when consent is required; otherwise omit.",
+    )
 
 
 class ConfirmEmailRequest(AuthenticationRequest):
@@ -175,8 +193,34 @@ class EmailNotVerifiedResponse(BaseModel):
 
 
 class RegistrationPolicyResponse(BaseModel):
-    terms_version: str
-    privacy_version: str
+    model_config = ConfigDict(
+        json_schema_extra={
+            "examples": [
+                {
+                    "legal_consent_required": True,
+                    "legal_policy_status": "active",
+                    "terms_version": "approved-terms-version",
+                    "terms_url": "https://legal.pos.example/terms",
+                    "privacy_version": "approved-privacy-version",
+                    "privacy_url": "https://legal.pos.example/privacy",
+                },
+                {
+                    "legal_consent_required": False,
+                    "legal_policy_status": "deferred_nonproduction",
+                    "terms_version": None,
+                    "terms_url": None,
+                    "privacy_version": None,
+                    "privacy_url": None,
+                },
+            ]
+        }
+    )
+    legal_consent_required: bool
+    legal_policy_status: Literal["active", "deferred_nonproduction"]
+    terms_version: str | None
+    terms_url: str | None
+    privacy_version: str | None
+    privacy_url: str | None
 
 
 class SignInRequest(AuthenticationRequest):

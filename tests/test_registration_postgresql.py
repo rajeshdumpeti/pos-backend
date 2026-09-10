@@ -22,6 +22,9 @@ from app.application.email_registration import (
     RegistrationPolicy,
     RegistrationInputRejectedError,
     LegalAcceptanceOutdatedError,
+    LegalConsentNotApplicableError,
+    LegalConsentRequiredError,
+    LegalPolicyStatus,
     ResendCooldownActiveError,
     ResendVerificationCommand,
     VerificationAttemptsExceededError,
@@ -35,6 +38,7 @@ from app.infrastructure.authentication.models import (
     EmailIdentityModel,
     EmailVerificationChallengeModel,
     RefreshSessionModel,
+    SecurityEventModel,
     UserAccountModel,
 )
 from app.infrastructure.authentication.registration import (
@@ -136,7 +140,9 @@ def service(engine, clock, cipher, verification_material):
     return _service(engine, clock, cipher, verification_material)
 
 
-def _service(engine, clock, cipher, verification_material=None) -> EmailRegistrationService:
+def _service(
+    engine, clock, cipher, verification_material=None, policy=None
+) -> EmailRegistrationService:
     sessions = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
     return EmailRegistrationService(
         lambda request_id: SqlAlchemyAuthenticationUnitOfWork(
@@ -151,7 +157,8 @@ def _service(engine, clock, cipher, verification_material=None) -> EmailRegistra
         ),
         cipher,
         SafeAuthenticationEventLogger(),
-        RegistrationPolicy(
+        policy
+        or RegistrationPolicy(
             terms_version="terms-test-v1",
             privacy_version="privacy-test-v1",
         ),
@@ -229,7 +236,7 @@ def test_registration_requires_current_legal_acceptance(service):
         "privacy_version": "privacy-test-v1",
         "request_id": "legal-test",
     }
-    with pytest.raises(RegistrationInputRejectedError):
+    with pytest.raises(LegalConsentRequiredError):
         service.register(RegisterAccountCommand(terms_accepted=False, **base))
     with pytest.raises(LegalAcceptanceOutdatedError):
         service.register(
@@ -239,6 +246,74 @@ def test_registration_requires_current_legal_acceptance(service):
                 **{key: value for key, value in base.items() if key != "terms_version"},
             )
         )
+
+
+def test_deferred_registration_persists_no_consent_and_queues_verification(
+    engine, clock, cipher, verification_material
+):
+    deferred = _service(
+        engine,
+        clock,
+        cipher,
+        verification_material,
+        RegistrationPolicy(
+            legal_consent_required=False,
+            legal_policy_status=LegalPolicyStatus.DEFERRED_NONPRODUCTION,
+        ),
+    )
+    result = deferred.register(
+        RegisterAccountCommand(
+            display_name="Deferred Person",
+            email="deferred@example.com",
+            password="a private passphrase 9472",
+            request_id="deferred-registration",
+        )
+    )
+    with Session(engine) as session:
+        account = session.scalars(select(UserAccountModel)).one()
+        challenges = session.scalars(select(EmailVerificationChallengeModel)).all()
+        outbox = session.scalars(select(AuthenticationEmailOutboxModel)).all()
+        events = session.scalars(select(SecurityEventModel)).all()
+    assert account.terms_version is None
+    assert account.terms_accepted_at is None
+    assert account.privacy_version is None
+    assert account.privacy_accepted_at is None
+    assert len(challenges) == len(outbox) == 1
+    assert all("consent" not in event.event_type for event in events)
+    assert result.status == "registration_pending"
+
+
+def test_deferred_registration_rejects_consent_and_rolls_back_encryption_failure(
+    engine, clock, verification_material
+):
+    policy = RegistrationPolicy(
+        legal_consent_required=False,
+        legal_policy_status=LegalPolicyStatus.DEFERRED_NONPRODUCTION,
+    )
+    deferred = _service(engine, clock, FailingCipher(), verification_material, policy)
+    with pytest.raises(LegalConsentNotApplicableError):
+        deferred.register(
+            RegisterAccountCommand(
+                display_name="Deferred Person",
+                email="deferred@example.com",
+                password="a private passphrase 9472",
+                request_id="deferred-consent-rejected",
+                terms_accepted=True,
+            )
+        )
+    with pytest.raises(AuthenticationCryptographyError):
+        deferred.register(
+            RegisterAccountCommand(
+                display_name="Deferred Person",
+                email="deferred@example.com",
+                password="a private passphrase 9472",
+                request_id="deferred-rollback",
+            )
+        )
+    with Session(engine) as session:
+        assert session.scalars(select(UserAccountModel)).all() == []
+        assert session.scalars(select(EmailVerificationChallengeModel)).all() == []
+        assert session.scalars(select(AuthenticationEmailOutboxModel)).all() == []
 
 
 def _session_service(engine, registration, clock):

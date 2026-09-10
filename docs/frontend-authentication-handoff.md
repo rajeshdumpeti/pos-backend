@@ -1,7 +1,7 @@
 # Backend to frontend authentication handoff
 
 This is the authoritative frontend contract for **Authentication Contract
-v1.0.0**. Earlier milestone handoffs are historical evidence; when they differ,
+v1.1.0**. Earlier milestone handoffs are historical evidence; when they differ,
 this document and generated OpenAPI govern. The backend baseline must be pinned
 by the integration change to the reviewed commit containing Milestone 07-09.
 Until that commit exists, use branch `feat/backend-auth-contract-freeze` and do
@@ -34,18 +34,22 @@ and `Pragma: no-cache`.
 
 ```ts
 type RegistrationPolicyResponse = {
-  terms_version: string;
-  privacy_version: string;
+  legal_consent_required: boolean;
+  legal_policy_status: "active" | "deferred_nonproduction";
+  terms_version: string | null;
+  terms_url: string | null;
+  privacy_version: string | null;
+  privacy_url: string | null;
 };
 
 type RegistrationRequest = {
   display_name: string;
   email: string;
   password: string;
-  terms_accepted: boolean;
-  privacy_accepted: boolean;
-  terms_version: string;
-  privacy_version: string;
+  terms_accepted?: boolean;
+  privacy_accepted?: boolean;
+  terms_version?: string;
+  privacy_version?: string;
 };
 
 type PendingVerificationResponse = {
@@ -130,9 +134,12 @@ JSON examples use only placeholders:
 
 ## Registration and verification
 
-Fetch `GET /registration-policy` before showing legal acceptance and again after
-`legal_acceptance_outdated`. Submit the returned identifiers unchanged. The
-endpoint contains no legal content or URLs. Product supplies approved legal copy.
+Fetch `GET /registration-policy` before registration and again after
+`legal_acceptance_outdated`. When required, show both backend-provided document
+URLs, require explicit acceptance, and submit their identifiers unchanged. When
+deferred, omit the consent UI and all four legal request fields. Never invent
+acceptance, versions, URLs, or whether consent applies. Deferred policy is
+backend-controlled and forbidden in staging and production.
 Do not permanently hardcode version identifiers in the app.
 
 Registration returns a transient flow token and masked address. Keep the token
@@ -246,6 +253,8 @@ them. Every public `429` has integer `Retry-After` from 1 through 3,600 seconds.
 
 | Operation, method, and path | HTTP | Code and exact message | Action/timing | Class | Frontend transition |
 |---|---:|---|---|---|---|
+| registration, `POST /registrations` | 400 | `legal_consent_required` — “Legal consent is required” | none | correctable | Display both current documents and require explicit acceptance |
+| registration, `POST /registrations` | 400 | `legal_consent_not_applicable` — “Legal consent is not applicable” | none | policy refresh | Refetch policy and omit all legal fields when deferred |
 | registration, `POST /registrations` | 400 | `password_rejected` — “Password was rejected” | none | correctable | Focus password; preserve nonsecret fields |
 | registration, `POST /registrations` | 409 | `legal_acceptance_outdated` — “Registration policy has changed” | `refresh_registration_policy` | correctable | Refetch policy and require acceptance of current copy |
 | verification confirm, `POST /email-verifications/confirm` | 400 | `verification_flow_invalid` — “Verification flow is invalid” | none | flow restart | Clear flow and return to Sign In/registration |
@@ -277,6 +286,7 @@ them. Every public `429` has integer `Retry-After` from 1 through 3,600 seconds.
 | every listed endpoint except `POST /password-resets` | 429 | `rate_limited` — “Please try again later” | bounded `Retry-After` only | retryable | End loading; monotonic/manual retry countdown |
 | forgot password, `POST /password-resets` | 202 | `instructions_if_eligible` response, no error code | no Retry-After | privacy-safe generic | Show the same neutral acknowledgement |
 | every listed endpoint, see endpoint inventory | 503 | `dependency_unavailable` — “A required dependency is unavailable” | none | retryable | Preserve safe state and allow manual retry |
+| registration policy, `GET /registration-policy` | 503 | `authentication_configuration_unavailable` — “Authentication configuration is unavailable” | none | retryable/configuration | Do not use fallback policy; allow explicit retry |
 | every listed endpoint, see endpoint inventory | 500 | `internal_server_error` — “An unexpected error occurred” | none | retryable/support | Generic state with request ID only |
 
 Malformed extra Authorization headers can produce `authentication_required` on

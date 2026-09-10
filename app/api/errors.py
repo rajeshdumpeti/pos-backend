@@ -11,8 +11,11 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api.schemas import ErrorDetail, ErrorResponse
 from app.application.email_registration import (
     AccountAlreadyExistsError,
+    AuthenticationConfigurationUnavailableError,
     AuthenticationCryptographyError,
     LegalAcceptanceOutdatedError,
+    LegalConsentNotApplicableError,
+    LegalConsentRequiredError,
     PasswordRejectedError,
     RegistrationDependencyUnavailableError,
     RegistrationInputRejectedError,
@@ -156,6 +159,17 @@ async def _handle_registration_error(
         return _error_response(
             request, 422, "request_validation_failed", "Request validation failed"
         )
+    if isinstance(error, LegalConsentRequiredError):
+        return _error_response(
+            request, 400, "legal_consent_required", "Legal consent is required"
+        )
+    if isinstance(error, LegalConsentNotApplicableError):
+        return _error_response(
+            request,
+            400,
+            "legal_consent_not_applicable",
+            "Legal consent is not applicable",
+        )
     if isinstance(error, LegalAcceptanceOutdatedError):
         return _error_response(
             request,
@@ -208,6 +222,13 @@ async def _handle_registration_error(
             "account_already_exists",
             "Account ownership was confirmed",
             actions=["sign_in", "forgot_password"],
+        )
+    if isinstance(error, AuthenticationConfigurationUnavailableError):
+        return _error_response(
+            request,
+            503,
+            "authentication_configuration_unavailable",
+            "Authentication configuration is unavailable",
         )
     if isinstance(error, RegistrationDependencyUnavailableError):
         return _error_response(

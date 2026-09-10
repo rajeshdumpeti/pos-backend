@@ -49,7 +49,9 @@ def test_supported_environment_names_are_normalized(
                 "AUTH_EMAIL_FROM": "POS <auth@example.test>",
                 "AUTH_PASSWORD_RESET_URL": "https://app.example.test/reset",
                 "CURRENT_TERMS_VERSION": "terms-test-v1",
+                "CURRENT_TERMS_URL": "https://pos.com/legal/terms",
                 "CURRENT_PRIVACY_VERSION": "privacy-test-v1",
+                "CURRENT_PRIVACY_URL": "https://pos.com/legal/privacy",
             }
         )
     settings = load_settings(environment)
@@ -184,7 +186,10 @@ def test_load_settings_calls_are_isolated(monkeypatch: pytest.MonkeyPatch):
         "AUTH_OUTBOX_ENCRYPTION_KEY",
         "AUTH_REFRESH_RECEIPT_ENCRYPTION_KEY",
         "CURRENT_TERMS_VERSION",
+        "CURRENT_TERMS_URL",
         "CURRENT_PRIVACY_VERSION",
+        "CURRENT_PRIVACY_URL",
+        "AUTH_LEGAL_CONSENT_MODE",
         "AUTH_EMAIL_PROVIDER",
         "RESEND_API_KEY",
         "AUTH_EMAIL_FROM",

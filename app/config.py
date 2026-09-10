@@ -33,6 +33,11 @@ class AuthenticationEmailProvider(StrEnum):
     RESEND = "resend"
 
 
+class AuthenticationLegalConsentMode(StrEnum):
+    REQUIRED = "required"
+    DEFERRED_NONPRODUCTION = "deferred_nonproduction"
+
+
 class Settings(BaseModel):
     """Validated settings with sensitive values excluded from representations."""
 
@@ -61,6 +66,11 @@ class Settings(BaseModel):
     auth_outbox_encryption_key_version: int = 1
     current_terms_version: str | None = None
     current_privacy_version: str | None = None
+    current_terms_url: str | None = None
+    current_privacy_url: str | None = None
+    auth_legal_consent_mode: AuthenticationLegalConsentMode = (
+        AuthenticationLegalConsentMode.REQUIRED
+    )
     local_email_inspection_enabled: bool = False
     auth_email_provider: AuthenticationEmailProvider = AuthenticationEmailProvider.LOCAL
     resend_api_key: SecretStr | None = Field(default=None, repr=False)
@@ -254,6 +264,28 @@ def _validate_authentication_settings(settings: Settings) -> None:
     ):
         if not value or len(value) > 64:
             raise ConfigurationError(f"{name} must contain 1 to 64 characters")
+    if (
+        settings.auth_legal_consent_mode
+        is AuthenticationLegalConsentMode.DEFERRED_NONPRODUCTION
+        and settings.app_env in _PROTECTED_ENVIRONMENTS
+    ):
+        raise ConfigurationError(
+            "AUTH_LEGAL_CONSENT_MODE deferred_nonproduction is restricted to non-production environments"
+        )
+    legal_values = (
+        settings.current_terms_version,
+        settings.current_terms_url,
+        settings.current_privacy_version,
+        settings.current_privacy_url,
+    )
+    if settings.auth_legal_consent_mode is AuthenticationLegalConsentMode.REQUIRED:
+        configured = tuple(value is not None for value in legal_values)
+        if any(configured) and not all(configured):
+            raise ConfigurationError(
+                "Required legal policy configuration must include both versions and both URLs"
+            )
+        if all(configured):
+            _validate_legal_policy(settings)
     for name, value in (
         ("CURRENT_TERMS_VERSION", settings.current_terms_version),
         ("CURRENT_PRIVACY_VERSION", settings.current_privacy_version),
@@ -274,6 +306,8 @@ def _validate_authentication_settings(settings: Settings) -> None:
                 ),
                 ("CURRENT_TERMS_VERSION", settings.current_terms_version),
                 ("CURRENT_PRIVACY_VERSION", settings.current_privacy_version),
+                ("CURRENT_TERMS_URL", settings.current_terms_url),
+                ("CURRENT_PRIVACY_URL", settings.current_privacy_url),
             )
             if value is None
         ]
@@ -350,6 +384,50 @@ def _validate_authentication_settings(settings: Settings) -> None:
             and sender_address.casefold().endswith("@resend.dev")
         ):
             raise ConfigurationError("AUTH_EMAIL_FROM must use a verified sender domain")
+
+
+def _validate_legal_policy(settings: Settings) -> None:
+    values = {
+        "CURRENT_TERMS_VERSION": settings.current_terms_version,
+        "CURRENT_PRIVACY_VERSION": settings.current_privacy_version,
+    }
+    placeholder = re.compile(
+        r"(?:placeholder|change[-_ ]?me|replace[-_ ]?me|todo|example)", re.I
+    )
+    for name, value in values.items():
+        assert value is not None
+        if placeholder.search(value) or "<" in value or ">" in value:
+            raise ConfigurationError(f"{name} must not be a placeholder")
+    for name, value in (
+        ("CURRENT_TERMS_URL", settings.current_terms_url),
+        ("CURRENT_PRIVACY_URL", settings.current_privacy_url),
+    ):
+        assert value is not None
+        try:
+            parsed = urlsplit(value)
+            parsed.port
+        except ValueError:
+            raise ConfigurationError(f"{name} must be a valid reviewable URL") from None
+        allowed_schemes = (
+            {"http", "https"}
+            if settings.app_env not in _PROTECTED_ENVIRONMENTS
+            else {"https"}
+        )
+        if (
+            parsed.scheme.lower() not in allowed_schemes
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ConfigurationError(f"{name} must be an approved reviewable URL")
+        if settings.app_env in _PROTECTED_ENVIRONMENTS and (
+            placeholder.search(parsed.hostname)
+            or parsed.hostname.endswith((".example", ".test", ".invalid"))
+            or parsed.hostname in {"localhost", "127.0.0.1"}
+        ):
+            raise ConfigurationError(f"{name} must not be a placeholder")
 
 
 def _parse_cors_origins(
@@ -478,6 +556,9 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ),
         current_terms_version=_optional_value(source, "CURRENT_TERMS_VERSION"),
         current_privacy_version=_optional_value(source, "CURRENT_PRIVACY_VERSION"),
+        current_terms_url=_optional_value(source, "CURRENT_TERMS_URL"),
+        current_privacy_url=_optional_value(source, "CURRENT_PRIVACY_URL"),
+        auth_legal_consent_mode=_parse_legal_consent_mode(source),
         local_email_inspection_enabled=_parse_bool(
             source, "AUTH_LOCAL_EMAIL_INSPECTION_ENABLED", False
         ),
@@ -498,6 +579,18 @@ def _parse_email_provider(environ: Mapping[str, str]) -> AuthenticationEmailProv
         return AuthenticationEmailProvider(raw)
     except ValueError:
         raise ConfigurationError("AUTH_EMAIL_PROVIDER must be local or resend") from None
+
+
+def _parse_legal_consent_mode(
+    environ: Mapping[str, str],
+) -> AuthenticationLegalConsentMode:
+    raw = (_optional_value(environ, "AUTH_LEGAL_CONSENT_MODE") or "required").lower()
+    try:
+        return AuthenticationLegalConsentMode(raw)
+    except ValueError:
+        raise ConfigurationError(
+            "AUTH_LEGAL_CONSENT_MODE must be required or deferred_nonproduction"
+        ) from None
 
 
 def _validate_security_settings(settings: Settings) -> None:
