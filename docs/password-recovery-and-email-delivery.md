@@ -44,10 +44,18 @@ Process a bounded production batch deliberately:
 python -m app.infrastructure.authentication.email_delivery process-pending 25
 ```
 
+Uvicorn intentionally does not drain this outbox. The command is a bounded,
+one-time worker invocation; during local end-to-end testing, run it after each
+email-producing API action. A long-running worker remains a deployment and
+operations concern.
+
 Workers claim with `FOR UPDATE SKIP LOCKED`, commit the claim, deliver, and then
 record accepted, retryable, or permanent status in a separate transaction.
 Claims have a five-minute lease; abandoned claims can be reclaimed safely with
-the same provider idempotency key.
+the same provider idempotency key. Before provider contact, the worker rejects
+verification and password-reset payloads at or after their authoritative expiry
+and permanently records `message_expired`. Operational output must never contain
+a recipient, credential, token, code, decrypted payload, or email body.
 Resend acceptance is not proof of inbox placement.
 
 ## Configuration
