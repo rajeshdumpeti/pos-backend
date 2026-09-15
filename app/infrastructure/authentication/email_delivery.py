@@ -1,5 +1,7 @@
 """Authentication email rendering, Resend delivery, and bounded worker CLI."""
 
+from collections.abc import Callable
+from datetime import UTC, datetime
 from html import escape
 import sys
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -28,9 +30,20 @@ from app.infrastructure.database import create_database_engine, create_session_f
 
 
 class AuthenticationEmailTemplateRenderer:
-    def __init__(self, cipher: AesGcmOutboxCipher, sender: str) -> None:
+    def __init__(
+        self,
+        cipher: AesGcmOutboxCipher,
+        sender: str,
+        *,
+        clock: Callable[[], datetime] | None = None,
+    ) -> None:
         self._cipher = cipher
         self._sender = sender
+        self._clock = clock or (lambda: datetime.now(UTC))
+
+    def _reject_expired(self, expires_at: datetime) -> None:
+        if self._clock() >= expires_at:
+            raise EmailDeliveryError("message_expired", retryable=False)
 
     def render(self, record: AuthenticationEmailOutboxRecord) -> OutboundEmail:
         payload = EncryptedOutboxPayload(
@@ -46,6 +59,7 @@ class AuthenticationEmailTemplateRenderer:
                 raise_safe_delivery_error(
                     "payload_unavailable", retryable=True, internal_cause=error
                 )
+            self._reject_expired(message.expires_at)
             link = _reset_link(message.reset_url, message.token)
             subject = "Reset your POS password"
             text = (
@@ -68,6 +82,7 @@ class AuthenticationEmailTemplateRenderer:
                 raise_safe_delivery_error(
                     "payload_unavailable", retryable=True, internal_cause=error
                 )
+            self._reject_expired(message.expires_at)
             subject = "Verify your POS email"
             text = (
                 f"Your POS verification code is {message.code}. "

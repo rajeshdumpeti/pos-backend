@@ -1,6 +1,6 @@
 """Network-free email-provider, rendering, and configuration tests."""
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 import logging
 import traceback
 from pathlib import Path
@@ -14,9 +14,15 @@ import pytest
 from app.application.email_delivery import (
     AuthenticationEmailDispatcher, DeliveryReceipt, EmailDeliveryError, OutboundEmail,
 )
+from app.application.email_registration import VerificationEmailMessage
 from app.application.password_recovery import PasswordResetEmailMessage
 from app.config import ConfigurationError, load_settings
-from app.domain.authentication import AuthenticationEmailOutboxRecord, OutboxMessageKind, OutboxStatus
+from app.domain.authentication import (
+    AuthenticationEmailOutboxRecord,
+    ChallengePurpose,
+    OutboxMessageKind,
+    OutboxStatus,
+)
 from app.infrastructure.authentication.email_delivery import (
     AuthenticationEmailTemplateRenderer, ResendEmailProvider,
 )
@@ -53,6 +59,59 @@ def _message():
         "person@example.test", "POS <auth@example.test>", "Subject",
         "Plain body", "<p>Body</p>", "outbox-id",
     )
+
+
+def _encrypted_record(
+    kind: OutboxMessageKind, expires_at: datetime
+) -> AuthenticationEmailOutboxRecord:
+    cipher = AesGcmOutboxCipher(b"e" * 32, key_id="test", key_version=1)
+    record_id = uuid4()
+    dedupe = f"{kind.value}:{record_id}"
+    if kind is OutboxMessageKind.PASSWORD_RESET:
+        encrypted = cipher.encrypt_password_reset(
+            PasswordResetEmailMessage(
+                "t" * 43, "https://app.example.test/reset", expires_at
+            ),
+            context=dedupe.encode("ascii"),
+        )
+    else:
+        encrypted = cipher.encrypt(
+            VerificationEmailMessage(
+                "012345", expires_at, ChallengePurpose.REGISTRATION
+            ),
+            context=dedupe.encode("ascii"),
+        )
+    return AuthenticationEmailOutboxRecord(
+        id=record_id,
+        user_account_id=None,
+        message_kind=kind,
+        recipient_normalized_email="person@example.test",
+        payload_ciphertext=encrypted.ciphertext,
+        encryption_key_id=encrypted.key_id,
+        encryption_key_version=encrypted.key_version,
+        deduplication_key=dedupe,
+        status=OutboxStatus.PENDING,
+        created_at=NOW,
+        available_at=NOW,
+    )
+
+
+def _dispatch_encrypted(record: AuthenticationEmailOutboxRecord):
+    claim_repository = MagicMock()
+    claim_repository.claim_available.return_value = [record]
+    result_repository = MagicMock()
+    units = iter([DispatchUnit(claim_repository), DispatchUnit(result_repository)])
+    provider = MagicMock()
+    provider.send.return_value = DeliveryReceipt("provider-id")
+    renderer = AuthenticationEmailTemplateRenderer(
+        AesGcmOutboxCipher(b"e" * 32, key_id="test", key_version=1),
+        "POS <auth@example.test>",
+        clock=lambda: NOW,
+    )
+    summary = AuthenticationEmailDispatcher(
+        lambda _request_id: next(units), renderer, provider, clock=lambda: NOW
+    ).process_pending(1)
+    return summary, provider, claim_repository, result_repository
 
 
 def test_resend_uses_bounded_contract_and_idempotency_without_live_network():
@@ -107,7 +166,7 @@ def test_reset_renderer_builds_text_and_accessible_html_from_encrypted_payload()
     dedupe = f"password-reset:{record_id}"
     encrypted = cipher.encrypt_password_reset(
         PasswordResetEmailMessage(
-            "t" * 43, "https://app.example.test/reset", NOW
+            "t" * 43, "https://app.example.test/reset", NOW + timedelta(minutes=1)
         ), context=dedupe.encode("ascii")
     )
     record = AuthenticationEmailOutboxRecord(
@@ -121,11 +180,48 @@ def test_reset_renderer_builds_text_and_accessible_html_from_encrypted_payload()
         created_at=NOW, available_at=NOW,
     )
     rendered = AuthenticationEmailTemplateRenderer(
-        cipher, "POS <auth@example.test>"
+        cipher, "POS <auth@example.test>", clock=lambda: NOW
     ).render(record)
     assert "Reset your password" in rendered.text
     assert '<a href="https://app.example.test/reset?token=' in rendered.html
     assert rendered.idempotency_key == str(record_id)
+
+
+@pytest.mark.parametrize(
+    "kind", [OutboxMessageKind.EMAIL_VERIFICATION, OutboxMessageKind.PASSWORD_RESET]
+)
+@pytest.mark.parametrize("offset", [timedelta(seconds=-1), timedelta(0)])
+def test_expired_authentication_message_fails_permanently_before_provider(
+    kind, offset
+):
+    record = _encrypted_record(kind, NOW + offset)
+
+    summary, provider, claim_repository, repository = _dispatch_encrypted(record)
+
+    assert summary.failed == 1
+    assert summary.delivered == 0
+    assert summary.retry_scheduled == 0
+    provider.send.assert_not_called()
+    repository.mark_failed.assert_called_once()
+    claim_id = repository.mark_failed.call_args.args[1]
+    assert repository.mark_failed.call_args.args[0] == record.id
+    assert repository.mark_failed.call_args.args[2:] == (NOW, "message_expired")
+    assert claim_id == claim_repository.claim_available.call_args.args[1]
+    repository.release_for_retry.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "kind", [OutboxMessageKind.EMAIL_VERIFICATION, OutboxMessageKind.PASSWORD_RESET]
+)
+def test_authentication_message_immediately_before_expiry_reaches_provider(kind):
+    record = _encrypted_record(kind, NOW + timedelta(microseconds=1))
+
+    summary, provider, _claim_repository, repository = _dispatch_encrypted(record)
+
+    assert summary.delivered == 1
+    assert summary.failed == 0
+    provider.send.assert_called_once()
+    repository.mark_delivered.assert_called_once()
 
 
 def test_email_configuration_defaults_are_safe_and_protected_values_are_validated():

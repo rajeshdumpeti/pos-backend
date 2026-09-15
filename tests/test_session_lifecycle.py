@@ -156,9 +156,12 @@ class Unit:
         self.state = state
 
     def __enter__(self):
+        self.state.enters += 1
         return self
 
-    def __exit__(self, *args):
+    def __exit__(self, exception_type, *_args):
+        self.state.exits += 1
+        self.state.exit_exceptions.append(exception_type)
         return None
 
     def commit(self):
@@ -182,6 +185,9 @@ class State:
         self.receipts = Receipts()
         self.events = Events()
         self.commits = 0
+        self.enters = 0
+        self.exits = 0
+        self.exit_exceptions = []
 
 
 def service(
@@ -218,6 +224,21 @@ def test_sign_in_is_enumeration_safe_and_refresh_is_seven_days():
     assert (result.access_expires_at - NOW).seconds == 600
     assert state.commits == 1
     assert len(state.sessions.records) == 1
+
+
+def test_consecutive_unknown_sign_ins_remain_equivalent_and_release_each_unit_of_work():
+    state = State()
+    sessions = service(state)
+
+    for request_id in ("invalid-attempt-1", "invalid-attempt-2"):
+        with pytest.raises(InvalidCredentialsError, match="Email or password is invalid"):
+            sessions.sign_in(SignInCommand("unknown@example.test", "wrong", request_id))
+
+    assert state.enters == 2
+    assert state.exits == 2
+    assert state.exit_exceptions == [InvalidCredentialsError, InvalidCredentialsError]
+    assert state.commits == 0
+    assert state.sessions.records == {}
 
 
 def test_unverified_and_disabled_conditions_require_a_correct_password():
