@@ -4,6 +4,7 @@ from datetime import UTC, datetime, timedelta
 import logging
 import traceback
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock
 from uuid import uuid4
 
@@ -16,7 +17,7 @@ from app.application.email_delivery import (
 )
 from app.application.email_registration import VerificationEmailMessage
 from app.application.password_recovery import PasswordResetEmailMessage
-from app.config import ConfigurationError, load_settings
+from app.config import ConfigurationError, Settings, load_settings
 from app.domain.authentication import (
     AuthenticationEmailOutboxRecord,
     ChallengePurpose,
@@ -27,6 +28,7 @@ from app.infrastructure.authentication.email_delivery import (
     AuthenticationEmailTemplateRenderer, ResendEmailProvider,
 )
 from app.infrastructure.authentication.registration import AesGcmOutboxCipher
+from app.infrastructure.authentication import local_email
 
 
 NOW = datetime(2026, 9, 7, 12, tzinfo=UTC)
@@ -62,16 +64,18 @@ def _message():
 
 
 def _encrypted_record(
-    kind: OutboxMessageKind, expires_at: datetime
+    kind: OutboxMessageKind,
+    expires_at: datetime,
+    *,
+    reset_url: str = "https://app.example.test/reset",
+    token: str = "t" * 43,
 ) -> AuthenticationEmailOutboxRecord:
     cipher = AesGcmOutboxCipher(b"e" * 32, key_id="test", key_version=1)
     record_id = uuid4()
     dedupe = f"{kind.value}:{record_id}"
     if kind is OutboxMessageKind.PASSWORD_RESET:
         encrypted = cipher.encrypt_password_reset(
-            PasswordResetEmailMessage(
-                "t" * 43, "https://app.example.test/reset", expires_at
-            ),
+            PasswordResetEmailMessage(token, reset_url, expires_at),
             context=dedupe.encode("ascii"),
         )
     else:
@@ -187,6 +191,109 @@ def test_reset_renderer_builds_text_and_accessible_html_from_encrypted_payload()
     assert rendered.idempotency_key == str(record_id)
 
 
+def test_development_custom_scheme_is_complete_in_html_and_plaintext_fallback(
+    caplog, capsys
+):
+    token = "fake_opaque_reset_token_value_123456789012345"
+    record = _encrypted_record(
+        OutboxMessageKind.PASSWORD_RESET,
+        NOW + timedelta(minutes=1),
+        reset_url="pos://reset-password",
+        token=token,
+    )
+
+    with caplog.at_level(logging.DEBUG):
+        rendered = AuthenticationEmailTemplateRenderer(
+            AesGcmOutboxCipher(b"e" * 32, key_id="test", key_version=1),
+            "POS <auth@example.test>",
+            clock=lambda: NOW,
+        ).render(record)
+
+    link = f"pos://reset-password?token={token}"
+    assert f"Reset your password: {link}" in rendered.text
+    assert "Development app link (copy the complete URL" in rendered.text
+    assert rendered.text.count(link) == 2
+    assert f'<a href="{link}">Reset your password</a>' in rendered.html
+    assert "If the button is not supported by your email client" in rendered.html
+    assert f"<span>{link}</span>" in rendered.html
+    assert token not in caplog.text
+    captured = capsys.readouterr()
+    assert token not in captured.out
+    assert token not in captured.err
+
+
+def test_resend_preserves_custom_scheme_html_and_plaintext_representations():
+    token = "fake_opaque_reset_token_value_123456789012345"
+    record = _encrypted_record(
+        OutboxMessageKind.PASSWORD_RESET,
+        NOW + timedelta(minutes=1),
+        reset_url="pos://reset-password",
+        token=token,
+    )
+    rendered = AuthenticationEmailTemplateRenderer(
+        AesGcmOutboxCipher(b"e" * 32, key_id="test", key_version=1),
+        "POS <auth@example.test>",
+        clock=lambda: NOW,
+    ).render(record)
+    client = Client(Response(200, {"id": "provider-id"}))
+
+    ResendEmailProvider(SecretStr("fake-provider-key"), client=client).send(rendered)
+
+    request_body = client.calls[0][1]["json"]
+    link = f"pos://reset-password?token={token}"
+    assert link in request_body["text"]
+    assert link in request_body["html"]
+    assert request_body["to"] == ["person@example.test"]
+
+
+def test_local_inspection_command_never_prints_password_reset_token(monkeypatch, capsys):
+    token = "fake_opaque_reset_token_value_123456789012345"
+    record = SimpleNamespace(
+        message_kind=OutboxMessageKind.PASSWORD_RESET.value,
+        recipient_normalized_email="person@example.test",
+        payload_ciphertext=b"ciphertext",
+        encryption_key_id="test",
+        encryption_key_version=1,
+        deduplication_key="password-reset:fake-id",
+    )
+    database_session = MagicMock()
+    database_session.scalars.return_value.one_or_none.return_value = record
+    session_context = MagicMock()
+    session_context.__enter__.return_value = database_session
+    cipher = MagicMock()
+    cipher.decrypt_password_reset.return_value = PasswordResetEmailMessage(
+        token,
+        "pos://reset-password",
+        NOW + timedelta(minutes=1),
+    )
+    monkeypatch.setattr(
+        local_email,
+        "load_settings",
+        lambda: SimpleNamespace(
+            app_env=local_email.AppEnvironment.DEVELOPMENT,
+            local_email_inspection_enabled=True,
+            database_url=SecretStr("postgresql://localhost/pos"),
+            auth_outbox_encryption_key=SecretStr("fake-encryption-key"),
+            auth_outbox_encryption_key_id="test",
+            auth_outbox_encryption_key_version=1,
+        ),
+    )
+    monkeypatch.setattr(local_email, "create_database_engine", lambda _url: object())
+    monkeypatch.setattr(
+        local_email, "create_session_factory", lambda _engine: lambda: session_context
+    )
+    monkeypatch.setattr(local_email, "decode_authentication_key", lambda *_args: b"e" * 32)
+    monkeypatch.setattr(local_email, "AesGcmOutboxCipher", lambda *_args, **_kwargs: cipher)
+    monkeypatch.setattr(local_email, "dispose_database_engine", lambda _engine: None)
+
+    assert local_email.inspect_latest() == 0
+
+    output = capsys.readouterr()
+    assert token not in output.out
+    assert token not in output.err
+    assert "restricted to recipient email delivery" in output.out
+
+
 @pytest.mark.parametrize(
     "kind", [OutboxMessageKind.EMAIL_VERIFICATION, OutboxMessageKind.PASSWORD_RESET]
 )
@@ -244,6 +351,43 @@ def test_email_configuration_defaults_are_safe_and_protected_values_are_validate
     assert values["AUTH_EMAIL_FROM"] == ""
     assert values["AUTH_PASSWORD_RESET_URL"] == ""
     assert values["AUTH_LOCAL_EMAIL_INSPECTION_ENABLED"] == "false"
+
+
+def test_protected_environments_require_https_reset_destinations():
+    secret = SecretStr("eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHg")
+    valid = {
+        "cors_origins": ("https://app.pos.com",),
+        "database_url": SecretStr("postgresql://localhost/pos"),
+        "jwt_secret": SecretStr("fake-jwt-secret-that-is-at-least-32-characters"),
+        "auth_challenge_digest_key": secret,
+        "auth_outbox_encryption_key": secret,
+        "auth_refresh_receipt_encryption_key": secret,
+        "current_terms_version": "terms-v1",
+        "current_terms_url": "https://legal.pos.com/terms",
+        "current_privacy_version": "privacy-v1",
+        "current_privacy_url": "https://legal.pos.com/privacy",
+        "auth_rate_limit_backend": "redis",
+        "redis_url": SecretStr("redis://localhost/0"),
+        "auth_rate_limit_key": secret,
+        "auth_public_origin": "https://api.pos.com",
+        "auth_email_provider": "resend",
+        "resend_api_key": SecretStr("fake-provider-key"),
+        "auth_email_from": "auth@pos.com",
+        "auth_password_reset_url": "https://app.pos.com/reset-password",
+    }
+
+    for environment in ("staging", "production"):
+        settings = Settings(app_env=environment, **valid)
+        assert settings.auth_password_reset_url.startswith("https://")
+        for reset_url in (
+            "pos://reset-password",
+            "http://127.0.0.1:8081/reset-password",
+        ):
+            with pytest.raises(ValueError, match="approved reset destination"):
+                Settings(
+                    app_env=environment,
+                    **{**valid, "auth_password_reset_url": reset_url},
+                )
 
 
 class DispatchUnit:

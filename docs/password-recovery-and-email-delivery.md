@@ -65,6 +65,12 @@ Resend acceptance is not proof of inbox placement.
   The base may contain ordinary query fields but must not contain a decoded
   `token` field, including encoded or duplicate forms, credentials, or a fragment.
   Delivery preserves existing fields and appends the opaque token exactly once.
+  For local/development `pos://` or `pos-dev://` destinations, the email keeps its
+  HTML call-to-action and also displays the complete app link as selectable text
+  because receiving email clients may disable custom-scheme anchors. The MIME
+  plaintext body contains the same clearly labeled fallback. Reset links are
+  delivered only to the intended recipient and are never printed by operational
+  or local-inspection commands.
 - `AUTH_EMAIL_PROVIDER`: `local` or `resend`.
 - `RESEND_API_KEY`: secret and required only for `resend`.
 - `AUTH_EMAIL_FROM`: sender required for `resend`; protected environments reject

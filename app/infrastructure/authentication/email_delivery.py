@@ -61,10 +61,26 @@ class AuthenticationEmailTemplateRenderer:
                 )
             self._reject_expired(message.expires_at)
             link = _reset_link(message.reset_url, message.token)
+            development_app_link = urlsplit(link).scheme in {"pos", "pos-dev"}
+            development_text = (
+                "Development app link (copy the complete URL and open it in the "
+                f"installed POS development client):\n{link}\n\n"
+                if development_app_link
+                else ""
+            )
+            development_html = (
+                '<p><strong>Development app link:</strong><br>'
+                'If the button is not supported by your email client, copy the complete '
+                'URL below and open it in the installed POS development client.<br>'
+                f'<span>{escape(link)}</span></p>'
+                if development_app_link
+                else ""
+            )
             subject = "Reset your POS password"
             text = (
                 "A password reset was requested for your POS account.\n\n"
                 f"Reset your password: {link}\n\n"
+                f"{development_text}"
                 "This link expires in 30 minutes. If you did not request this, "
                 "you can ignore this email."
             )
@@ -72,6 +88,7 @@ class AuthenticationEmailTemplateRenderer:
                 '<main><h1>Reset your POS password</h1>'
                 '<p>A password reset was requested for your POS account.</p>'
                 f'<p><a href="{escape(link, quote=True)}">Reset your password</a></p>'
+                f"{development_html}"
                 '<p>This link expires in 30 minutes. If you did not request this, '
                 'you can ignore this email.</p></main>'
             )

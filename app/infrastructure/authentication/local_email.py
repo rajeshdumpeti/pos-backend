@@ -10,7 +10,6 @@ from app.domain.registration import mask_email
 from app.infrastructure.authentication.models import AuthenticationEmailOutboxModel
 from app.infrastructure.authentication.registration import AesGcmOutboxCipher
 from app.domain.authentication import OutboxMessageKind
-from app.infrastructure.authentication.email_delivery import _reset_link
 from app.infrastructure.database import (
     create_database_engine,
     create_session_factory,
@@ -61,7 +60,7 @@ def inspect_latest() -> int:
             message = cipher.decrypt_password_reset(
                 payload, context=record.deduplication_key.encode("ascii")
             )
-            print(f"Password reset link: {_reset_link(message.reset_url, message.token)}")
+            print("Password reset content is restricted to recipient email delivery")
             print(f"Expires at: {message.expires_at.isoformat()}")
         else:
             message = cipher.decrypt(

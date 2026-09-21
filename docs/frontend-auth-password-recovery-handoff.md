@@ -46,3 +46,13 @@ Stable errors:
 Preserve and surface the response request ID in support affordances. Never log
 the email, reset token, or password. The app-link/universal-link implementation
 and mobile screens remain a separate frontend milestone.
+
+## Development email links
+
+Local development uses `AUTH_PASSWORD_RESET_URL=pos://reset-password`. The
+backend appends the single opaque token. The email retains its HTML action and
+shows the complete development app link as selectable text in both HTML and
+plaintext representations for clients that disable custom-scheme anchors. Open
+that fallback only with the installed POS development client. Staging and
+production require an approved HTTPS Universal/App Link; localhost and custom
+schemes remain rejected there.
