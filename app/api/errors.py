@@ -33,7 +33,6 @@ from app.application.session_lifecycle import (
     AccessTokenInvalidError,
     AccessTokenExpiredError,
     AuthenticationRequiredError,
-    AccountUnavailableError,
     EmailNotVerifiedError,
     InvalidCredentialsError,
     RefreshSessionInvalidError,
@@ -57,9 +56,21 @@ from app.application.password_recovery import (
     ResetTokenExpiredError,
     ResetTokenInvalidError,
 )
+from app.application.onboarding import (
+    OnboardingDependencyUnavailableError,
+    OnboardingEmailVerificationRequiredError,
+    OnboardingError,
+    OnboardingIncompleteError,
+    OnboardingRequiredError,
+    OnboardingStateConflictError,
+    OnboardingUpdateRejectedError,
+)
+from app.application.account_eligibility import AccountUnavailableError
 
 
 _ERROR_DESCRIPTIONS = {
+    status.HTTP_401_UNAUTHORIZED: "Authentication is required or invalid.",
+    status.HTTP_403_FORBIDDEN: "The authenticated account is not eligible for this operation.",
     status.HTTP_400_BAD_REQUEST: "The operation is not supported for this resource.",
     status.HTTP_404_NOT_FOUND: "The requested route, resource, or item was not found.",
     status.HTTP_405_METHOD_NOT_ALLOWED: "The HTTP method is not supported.",
@@ -109,10 +120,70 @@ def register_exception_handlers(application: FastAPI) -> None:
         RegistrationVerificationError, _handle_registration_error
     )
     application.add_exception_handler(SessionLifecycleError, _handle_session_error)
-    application.add_exception_handler(PasswordRecoveryError, _handle_password_recovery_error)
+    application.add_exception_handler(AccountUnavailableError, _handle_session_error)
+    application.add_exception_handler(
+        PasswordRecoveryError, _handle_password_recovery_error
+    )
+    application.add_exception_handler(OnboardingError, _handle_onboarding_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(StarletteHTTPException, _handle_http_error)
     application.add_exception_handler(Exception, _handle_unexpected_error)
+
+
+async def _handle_onboarding_error(
+    request: Request, error: OnboardingError
+) -> JSONResponse:
+    if isinstance(error, OnboardingEmailVerificationRequiredError):
+        return _onboarding_error_response(
+            request,
+            403,
+            "email_verification_required",
+            "Email verification is required",
+        )
+    if isinstance(error, OnboardingRequiredError):
+        return _onboarding_error_response(
+            request, 403, "onboarding_required", "Onboarding completion is required"
+        )
+    if isinstance(error, OnboardingUpdateRejectedError):
+        return _onboarding_error_response(
+            request, 400, "onboarding_update_rejected", "Onboarding update was rejected"
+        )
+    if isinstance(error, OnboardingIncompleteError):
+        return _onboarding_error_response(
+            request,
+            409,
+            "onboarding_incomplete",
+            "Onboarding requirements are incomplete",
+        )
+    if isinstance(error, OnboardingStateConflictError):
+        return _onboarding_error_response(
+            request,
+            409,
+            "onboarding_state_conflict",
+            "Onboarding state conflicts with a newer update",
+        )
+    if isinstance(error, OnboardingDependencyUnavailableError):
+        return _onboarding_error_response(
+            request,
+            503,
+            "dependency_unavailable",
+            "A required dependency is unavailable",
+        )
+    return _onboarding_error_response(
+        request, 500, "internal_server_error", "An unexpected error occurred"
+    )
+
+
+def _onboarding_error_response(
+    request: Request, status_code: int, code: str, message: str
+) -> JSONResponse:
+    return _error_response(
+        request,
+        status_code,
+        code,
+        message,
+        extra_headers={"Cache-Control": "no-store", "Pragma": "no-cache"},
+    )
 
 
 async def _handle_domain_error(request: Request, error: Exception) -> JSONResponse:
@@ -141,8 +212,11 @@ async def _handle_domain_error(request: Request, error: Exception) -> JSONRespon
 async def _handle_validation_error(
     request: Request, error: RequestValidationError
 ) -> JSONResponse:
-    details = ([] if request.url.path.startswith("/api/v1/auth") else
-               [_validation_detail(error_detail) for error_detail in error.errors()])
+    details = (
+        []
+        if request.url.path.startswith("/api/v1/auth")
+        else [_validation_detail(error_detail) for error_detail in error.errors()]
+    )
     return _error_response(
         request,
         status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -253,7 +327,9 @@ async def _handle_session_error(
     request: Request, error: SessionLifecycleError
 ) -> JSONResponse:
     if isinstance(error, InvalidCredentialsError):
-        return _error_response(request, 401, "invalid_credentials", "Email or password is invalid")
+        return _error_response(
+            request, 401, "invalid_credentials", "Email or password is invalid"
+        )
     if isinstance(error, EmailNotVerifiedError):
         continuation = error.continuation
         return _error_response(
@@ -270,19 +346,36 @@ async def _handle_session_error(
             },
         )
     if isinstance(error, AccountUnavailableError):
-        return _error_response(request, 403, "account_unavailable", "Account is unavailable")
+        return _error_response(
+            request, 403, "account_unavailable", "Account is unavailable"
+        )
     if isinstance(error, AuthenticationRequiredError):
-        return _error_response(request, 401, "authentication_required", "Authentication is required")
+        return _error_response(
+            request, 401, "authentication_required", "Authentication is required"
+        )
     if isinstance(error, AccessTokenExpiredError):
-        return _error_response(request, 401, "access_token_expired", "Access token expired")
+        return _error_response(
+            request, 401, "access_token_expired", "Access token expired"
+        )
     if isinstance(error, AccessTokenInvalidError):
-        return _error_response(request, 401, "access_token_invalid", "Access token is invalid")
+        return _error_response(
+            request, 401, "access_token_invalid", "Access token is invalid"
+        )
     if isinstance(error, RefreshSessionExpiredError):
-        return _error_response(request, 401, "refresh_session_expired", "Refresh session expired")
+        return _error_response(
+            request, 401, "refresh_session_expired", "Refresh session expired"
+        )
     if isinstance(error, RefreshSessionInvalidError):
-        return _error_response(request, 401, "refresh_session_invalid", "Refresh session is invalid")
+        return _error_response(
+            request, 401, "refresh_session_invalid", "Refresh session is invalid"
+        )
     if isinstance(error, RefreshSessionReplayedError):
-        return _error_response(request, 409, "refresh_session_replayed", "Refresh session replay was detected")
+        return _error_response(
+            request,
+            409,
+            "refresh_session_replayed",
+            "Refresh session replay was detected",
+        )
     if isinstance(error, RefreshIdempotencyConflictError):
         return _error_response(
             request,
@@ -291,26 +384,50 @@ async def _handle_session_error(
             "Refresh idempotency key conflicts with another request",
         )
     if isinstance(error, SessionDependencyUnavailableError):
-        return _error_response(request, 503, "dependency_unavailable", "A required dependency is unavailable")
+        return _error_response(
+            request,
+            503,
+            "dependency_unavailable",
+            "A required dependency is unavailable",
+        )
     if isinstance(error, SessionInternalError):
-        return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
-    return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
+        return _error_response(
+            request, 500, "internal_server_error", "An unexpected error occurred"
+        )
+    return _error_response(
+        request, 500, "internal_server_error", "An unexpected error occurred"
+    )
 
 
 async def _handle_password_recovery_error(
     request: Request, error: PasswordRecoveryError
 ) -> JSONResponse:
     if isinstance(error, ResetTokenInvalidError):
-        return _error_response(request, 400, "reset_token_invalid", "Reset token is invalid")
+        return _error_response(
+            request, 400, "reset_token_invalid", "Reset token is invalid"
+        )
     if isinstance(error, ResetTokenExpiredError):
-        return _error_response(request, 410, "reset_token_expired", "Reset token expired")
+        return _error_response(
+            request, 410, "reset_token_expired", "Reset token expired"
+        )
     if isinstance(error, ResetPasswordRejectedError):
-        return _error_response(request, 400, "password_rejected", "Password was rejected")
+        return _error_response(
+            request, 400, "password_rejected", "Password was rejected"
+        )
     if isinstance(error, PasswordRecoveryDependencyUnavailableError):
-        return _error_response(request, 503, "dependency_unavailable", "A required dependency is unavailable")
+        return _error_response(
+            request,
+            503,
+            "dependency_unavailable",
+            "A required dependency is unavailable",
+        )
     if isinstance(error, PasswordRecoveryInternalError):
-        return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
-    return _error_response(request, 500, "internal_server_error", "An unexpected error occurred")
+        return _error_response(
+            request, 500, "internal_server_error", "An unexpected error occurred"
+        )
+    return _error_response(
+        request, 500, "internal_server_error", "An unexpected error occurred"
+    )
 
 
 async def _handle_http_error(
@@ -337,9 +454,7 @@ async def _handle_http_error(
     )
 
 
-async def _handle_unexpected_error(
-    request: Request, _error: Exception
-) -> JSONResponse:
+async def _handle_unexpected_error(request: Request, _error: Exception) -> JSONResponse:
     return _error_response(
         request,
         status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -362,6 +477,9 @@ def _error_response(
 ) -> JSONResponse:
     request_id = get_request_id(request)
     headers = dict(extra_headers or {})
+    if request.url.path.startswith("/api/v1/onboarding"):
+        headers["Cache-Control"] = "no-store"
+        headers["Pragma"] = "no-cache"
     headers[REQUEST_ID_HEADER] = request_id
     body = ErrorResponse(
         code=code,

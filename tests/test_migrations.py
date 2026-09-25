@@ -40,6 +40,7 @@ from migrations.metadata import target_metadata
 ROOT = Path(__file__).resolve().parents[1]
 ALEMBIC_CONFIG = ROOT / "alembic.ini"
 BASELINE_PATH = ROOT / "migrations/versions/0001_migration_foundation.py"
+ONBOARDING_PATH = ROOT / "migrations/versions/0005_authoritative_onboarding.py"
 
 
 def _config(output: StringIO | None = None) -> Config:
@@ -83,6 +84,7 @@ def test_declarative_base_uses_canonical_authentication_metadata():
         "refresh_sessions",
         "security_events",
         "user_accounts",
+        "onboarding_states",
     }
 
 
@@ -141,17 +143,30 @@ def test_alembic_configuration_and_single_baseline_head_load():
     script = ScriptDirectory.from_config(config)
 
     assert Path(script.dir).resolve() == (ROOT / "migrations").resolve()
-    assert script.get_heads() == ["0004_auth_contract_v1"]
+    assert script.get_heads() == ["0005_authoritative_onboarding"]
     revision = script.get_revision("0001_migration_foundation")
     assert revision is not None
     assert revision.down_revision is None
 
 
+def test_onboarding_migration_and_metadata_share_completion_constraint():
+    table = RELATIONAL_METADATA.tables["onboarding_states"]
+    purposes = {
+        constraint.info.get("purpose")
+        for constraint in table.constraints
+        if isinstance(constraint, CheckConstraint)
+    }
+    migration = ONBOARDING_PATH.read_text()
+    assert "completed_state_has_required_facts" in purposes
+    assert "ck_onboarding_states__completed_state_has_required_facts" in migration
+    assert "jsonb_array_length(priority_life_areas) > 0" in migration
+    assert "updated_at" in migration
+    assert "ix_onboarding_states__updated_at" not in migration
+
+
 def test_baseline_upgrade_and_downgrade_are_no_ops():
     tree = parse(BASELINE_PATH.read_text())
-    functions = {
-        node.name: node for node in tree.body if isinstance(node, FunctionDef)
-    }
+    functions = {node.name: node for node in tree.body if isinstance(node, FunctionDef)}
 
     assert set(functions) >= {"upgrade", "downgrade"}
     for function_name in ("upgrade", "downgrade"):
@@ -185,6 +200,7 @@ def test_offline_upgrade_and_downgrade_generate_without_engine():
     assert "0002_auth_persistence" in upgrade_output.getvalue()
     assert "0003_registration_flow" in upgrade_output.getvalue()
     assert "0004_auth_contract_v1" in upgrade_output.getvalue()
+    assert "0005_authoritative_onboarding" in upgrade_output.getvalue()
 
 
 def test_online_configuration_requires_database_url_without_exposing_values():

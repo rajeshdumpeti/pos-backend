@@ -1,11 +1,12 @@
 """Email sign-in and secure session-lifecycle use cases."""
 
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime, timedelta
 from typing import Protocol
 from uuid import UUID, uuid4
 
+from app.application.account_eligibility import AccountUnavailableError
 from app.application.authentication_persistence import (
     AuthenticationPersistenceUnavailableError,
     AuthenticationUnitOfWork,
@@ -26,6 +27,7 @@ from app.domain.authentication import (
     EmailIdentityRecord,
     UserAccountRecord,
 )
+from app.domain.onboarding import OnboardingState
 
 
 class SessionLifecycleError(RuntimeError):
@@ -40,10 +42,6 @@ class EmailNotVerifiedError(SessionLifecycleError):
     def __init__(self, continuation: VerificationContinuationResult) -> None:
         super().__init__("Email verification is required")
         self.continuation = continuation
-
-
-class AccountUnavailableError(SessionLifecycleError):
-    pass
 
 
 class AccessTokenInvalidError(SessionLifecycleError):
@@ -90,7 +88,9 @@ class AccessTokenClaims:
 
 
 class AccessTokenCodec(Protocol):
-    def issue(self, claims: AccessTokenClaims, *, now: datetime) -> tuple[str, datetime]: ...
+    def issue(
+        self, claims: AccessTokenClaims, *, now: datetime
+    ) -> tuple[str, datetime]: ...
     def verify(self, token: str, *, now: datetime) -> AccessTokenClaims: ...
 
 
@@ -102,8 +102,12 @@ class EncryptedRefreshReceipt:
 
 
 class RefreshReceiptCipher(Protocol):
-    def encrypt(self, response: "SessionTokenResult", *, context: bytes) -> EncryptedRefreshReceipt: ...
-    def decrypt(self, receipt: RefreshRotationReceiptRecord, *, context: bytes) -> "SessionTokenResult": ...
+    def encrypt(
+        self, response: "SessionTokenResult", *, context: bytes
+    ) -> EncryptedRefreshReceipt: ...
+    def decrypt(
+        self, receipt: RefreshRotationReceiptRecord, *, context: bytes
+    ) -> "SessionTokenResult": ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -243,7 +247,13 @@ class EmailSessionService:
                     password_hash, command.password
                 )
                 if account is None or identity is None or not password_valid:
-                    self._diagnostic("email_sign_in_failed", "email_sign_in", "rejected", command.request_id, "invalid_credentials")
+                    self._diagnostic(
+                        "email_sign_in_failed",
+                        "email_sign_in",
+                        "rejected",
+                        command.request_id,
+                        "invalid_credentials",
+                    )
                     raise InvalidCredentialsError("Email or password is invalid")
                 if (
                     account.status is AccountStatus.PENDING_VERIFICATION
@@ -254,8 +264,10 @@ class EmailSessionService:
                         raise SessionDependencyUnavailableError(
                             "Verification continuation is unavailable"
                         )
-                    continuation = self._verification_continuation.issue_sign_in_continuation(
-                        unit, account, identity, command.request_id, now
+                    continuation = (
+                        self._verification_continuation.issue_sign_in_continuation(
+                            unit, account, identity, command.request_id, now
+                        )
                     )
                     unit.commit()
                     unverified_account_id = account.id
@@ -273,11 +285,20 @@ class EmailSessionService:
                     )
                     return EmailNotVerifiedError(continuation)
                 if account.status is not AccountStatus.ACTIVE:
-                    self._diagnostic("email_sign_in_failed", "email_sign_in", "rejected", command.request_id, "account_unavailable", account.id)
+                    self._diagnostic(
+                        "email_sign_in_failed",
+                        "email_sign_in",
+                        "rejected",
+                        command.request_id,
+                        "account_unavailable",
+                        account.id,
+                    )
                     raise AccountUnavailableError("Account is unavailable")
                 if self._password_hasher.needs_rehash(password_hash):
                     replacement = self._password_hasher.hash(command.password)
-                    if not unit.accounts.update_password_hash(account.id, replacement, now):
+                    if not unit.accounts.update_password_hash(
+                        account.id, replacement, now
+                    ):
                         raise SessionInternalError("Password hash could not be updated")
 
                 session_id = RefreshSessionId(self._identifier_factory())
@@ -297,14 +318,31 @@ class EmailSessionService:
                 )
                 unit.refresh_sessions.add(session)
                 unit.security_events.append(
-                    self._event("email_sign_in_succeeded", command.request_id, now, account.id, session_id)
+                    self._event(
+                        "email_sign_in_succeeded",
+                        command.request_id,
+                        now,
+                        account.id,
+                        session_id,
+                    )
                 )
                 access_token, access_expires_at = self._access_tokens.issue(
-                    AccessTokenClaims(account.id, session_id, account.authentication_epoch),
+                    AccessTokenClaims(
+                        account.id, session_id, account.authentication_epoch
+                    ),
                     now=now,
                 )
+                onboarding_required = not self._onboarding_complete(
+                    unit.accounts.get_onboarding_state(account.id)
+                )
                 unit.commit()
-            self._diagnostic("email_sign_in_succeeded", "email_sign_in", "succeeded", command.request_id, account_id=account.id)
+            self._diagnostic(
+                "email_sign_in_succeeded",
+                "email_sign_in",
+                "succeeded",
+                command.request_id,
+                account_id=account.id,
+            )
             return SessionTokenResult(
                 access_token,
                 refresh_token,
@@ -313,10 +351,12 @@ class EmailSessionService:
                 refresh_expires_at,
                 account.id,
                 session_id,
-                account.onboarding_required,
+                onboarding_required,
             )
         except AuthenticationPersistenceUnavailableError as error:
-            raise SessionDependencyUnavailableError("Session dependency is unavailable") from error
+            raise SessionDependencyUnavailableError(
+                "Session dependency is unavailable"
+            ) from error
 
     def refresh(self, command: RefreshCommand) -> SessionTokenResult:
         now = self._clock()
@@ -337,14 +377,21 @@ class EmailSessionService:
                     )
                 session = unit.refresh_sessions.get_by_token_digest_for_update(digest)
                 if session is None:
-                    receipt = unit.refresh_receipts.get_by_previous_digest_for_update(digest)
+                    receipt = unit.refresh_receipts.get_by_previous_digest_for_update(
+                        digest
+                    )
                     if receipt is None:
                         raise RefreshSessionInvalidError("Refresh session is invalid")
                     receipt_session = unit.refresh_sessions.get_for_update(
                         receipt.refresh_session_id
                     )
-                    receipt_account = (None if receipt_session is None else
-                        unit.accounts.get_for_update(receipt_session.user_account_id))
+                    receipt_account = (
+                        None
+                        if receipt_session is None
+                        else unit.accounts.get_for_update(
+                            receipt_session.user_account_id
+                        )
+                    )
                     if (
                         receipt.refresh_request_id == command.refresh_request_id
                         and receipt.expires_at > now
@@ -354,7 +401,21 @@ class EmailSessionService:
                         result = self._receipt_cipher.decrypt(
                             receipt, context=self._receipt_context(receipt.id)
                         )
-                        self._diagnostic("refresh_retry_succeeded", "refresh_session", "succeeded", command.request_id, "approved_retry", session_id=receipt.refresh_session_id)
+                        assert receipt_account is not None
+                        result = replace(
+                            result,
+                            onboarding_required=not self._onboarding_complete(
+                                unit.accounts.get_onboarding_state(receipt_account.id)
+                            ),
+                        )
+                        self._diagnostic(
+                            "refresh_retry_succeeded",
+                            "refresh_session",
+                            "succeeded",
+                            command.request_id,
+                            "approved_retry",
+                            session_id=receipt.refresh_session_id,
+                        )
                         return result
                     unit.refresh_sessions.revoke_family(
                         receipt.token_family_id, now, "refresh_replay"
@@ -368,8 +429,17 @@ class EmailSessionService:
                         )
                     )
                     unit.commit()
-                    self._diagnostic("refresh_token_replayed", "refresh_session", "rejected", command.request_id, "replay", session_id=receipt.refresh_session_id)
-                    raise RefreshSessionReplayedError("Refresh token replay was detected")
+                    self._diagnostic(
+                        "refresh_token_replayed",
+                        "refresh_session",
+                        "rejected",
+                        command.request_id,
+                        "replay",
+                        session_id=receipt.refresh_session_id,
+                    )
+                    raise RefreshSessionReplayedError(
+                        "Refresh token replay was detected"
+                    )
                 account = unit.accounts.get_for_update(session.user_account_id)
                 if not self._active(session, account, now):
                     if session.revoked_at is None and now >= session.expires_at:
@@ -377,11 +447,15 @@ class EmailSessionService:
                     raise RefreshSessionInvalidError("Refresh session is invalid")
                 replacement = self._refresh_tokens.issue()
                 replacement_digest = self._refresh_tokens.digest(replacement)
-                if not unit.refresh_sessions.replace_token(session.id, digest, replacement_digest, now):
+                if not unit.refresh_sessions.replace_token(
+                    session.id, digest, replacement_digest, now
+                ):
                     raise RefreshSessionInvalidError("Refresh session is invalid")
                 assert account is not None
                 access_token, access_expires_at = self._access_tokens.issue(
-                    AccessTokenClaims(account.id, session.id, account.authentication_epoch),
+                    AccessTokenClaims(
+                        account.id, session.id, account.authentication_epoch
+                    ),
                     now=now,
                 )
                 result = SessionTokenResult(
@@ -392,10 +466,14 @@ class EmailSessionService:
                     session.expires_at,
                     account.id,
                     session.id,
-                    account.onboarding_required,
+                    not self._onboarding_complete(
+                        unit.accounts.get_onboarding_state(account.id)
+                    ),
                 )
                 receipt_id = self._identifier_factory()
-                encrypted = self._receipt_cipher.encrypt(result, context=self._receipt_context(receipt_id))
+                encrypted = self._receipt_cipher.encrypt(
+                    result, context=self._receipt_context(receipt_id)
+                )
                 unit.refresh_receipts.add(
                     RefreshRotationReceiptRecord(
                         id=receipt_id,
@@ -411,24 +489,53 @@ class EmailSessionService:
                     )
                 )
                 unit.security_events.append(
-                    self._event("refresh_token_rotated", command.request_id, now, account.id, session.id)
+                    self._event(
+                        "refresh_token_rotated",
+                        command.request_id,
+                        now,
+                        account.id,
+                        session.id,
+                    )
                 )
                 unit.commit()
-                self._diagnostic("refresh_token_rotated", "refresh_session", "succeeded", command.request_id, account_id=account.id, session_id=session.id)
+                self._diagnostic(
+                    "refresh_token_rotated",
+                    "refresh_session",
+                    "succeeded",
+                    command.request_id,
+                    account_id=account.id,
+                    session_id=session.id,
+                )
                 return result
         except DuplicateRefreshRequestIdError:
             raise RefreshIdempotencyConflictError(
                 "Refresh idempotency key conflicts with another request"
             ) from None
         except AuthenticationPersistenceUnavailableError as error:
-            raise SessionDependencyUnavailableError("Session dependency is unavailable") from error
+            raise SessionDependencyUnavailableError(
+                "Session dependency is unavailable"
+            ) from error
 
-    def authenticate(self, access_token: str, request_id: str) -> tuple[AccessTokenClaims, object]:
+    def authenticate(
+        self, access_token: str, request_id: str
+    ) -> tuple[AccessTokenClaims, object]:
+        claims, account, _ = self._authenticate_state(access_token, request_id)
+        return claims, account
+
+    def _authenticate_state(
+        self, access_token: str, request_id: str
+    ) -> tuple[AccessTokenClaims, object, bool]:
         now = self._clock()
         try:
             claims = self._access_tokens.verify(access_token, now=now)
         except (AccessTokenInvalidError, AccessTokenExpiredError):
-            self._diagnostic("access_token_rejected", "current_session", "rejected", request_id, "invalid_access_token")
+            self._diagnostic(
+                "access_token_rejected",
+                "current_session",
+                "rejected",
+                request_id,
+                "invalid_access_token",
+            )
             raise
         try:
             with self._unit_of_work_factory(request_id) as unit:
@@ -441,20 +548,40 @@ class EmailSessionService:
                     or not self._active(session, account, now)
                 ):
                     raise AccessTokenInvalidError("Access token is invalid")
-                return claims, account
+                return (
+                    claims,
+                    account,
+                    self._onboarding_complete(
+                        unit.accounts.get_onboarding_state(claims.account_id)
+                    ),
+                )
         except AuthenticationPersistenceUnavailableError as error:
-            raise SessionDependencyUnavailableError("Session dependency is unavailable") from error
+            raise SessionDependencyUnavailableError(
+                "Session dependency is unavailable"
+            ) from error
 
     def current(self, access_token: str, request_id: str) -> CurrentSessionResult:
-        claims, account = self.authenticate(access_token, request_id)
-        self._diagnostic("session_restored", "current_session", "succeeded", request_id,
-                         account_id=claims.account_id, session_id=claims.session_id)
+        claims, account, onboarding_complete = self._authenticate_state(
+            access_token, request_id
+        )
+        self._diagnostic(
+            "session_restored",
+            "current_session",
+            "succeeded",
+            request_id,
+            account_id=claims.account_id,
+            session_id=claims.session_id,
+        )
         return CurrentSessionResult(
             account_id=claims.account_id,
             session_id=claims.session_id,
             display_name=account.display_name,
-            onboarding_required=account.onboarding_required,
+            onboarding_required=not onboarding_complete,
         )
+
+    @staticmethod
+    def _onboarding_complete(state: OnboardingState | None) -> bool:
+        return isinstance(state, OnboardingState) and state.is_complete
 
     def logout_current(self, access_token: str, request_id: str) -> None:
         claims = self._access_tokens.verify(access_token, now=self._clock())
@@ -467,18 +594,38 @@ class EmailSessionService:
                 account = unit.accounts.get_for_update(claims.account_id)
                 if session.revoked_at is not None:
                     return
-                if (claims.authentication_epoch != session.authentication_epoch
-                        or not self._active(session, account, now)):
+                if (
+                    claims.authentication_epoch != session.authentication_epoch
+                    or not self._active(session, account, now)
+                ):
                     raise AccessTokenInvalidError("Access token is invalid")
                 changed = unit.refresh_sessions.revoke(
                     claims.session_id, now, "logout_current"
                 )
                 if changed:
-                    unit.security_events.append(self._event("session_logged_out", request_id, now, claims.account_id, claims.session_id))
+                    unit.security_events.append(
+                        self._event(
+                            "session_logged_out",
+                            request_id,
+                            now,
+                            claims.account_id,
+                            claims.session_id,
+                        )
+                    )
                 unit.commit()
-            self._diagnostic("session_logged_out", "logout_current", "succeeded", request_id, "revoked" if changed else "already_revoked", claims.account_id, claims.session_id)
+            self._diagnostic(
+                "session_logged_out",
+                "logout_current",
+                "succeeded",
+                request_id,
+                "revoked" if changed else "already_revoked",
+                claims.account_id,
+                claims.session_id,
+            )
         except AuthenticationPersistenceUnavailableError as error:
-            raise SessionDependencyUnavailableError("Session dependency is unavailable") from error
+            raise SessionDependencyUnavailableError(
+                "Session dependency is unavailable"
+            ) from error
 
     def logout_all(self, access_token: str, request_id: str) -> None:
         claims = self._access_tokens.verify(access_token, now=self._clock())
@@ -491,21 +638,43 @@ class EmailSessionService:
                 account = unit.accounts.get_for_update(claims.account_id)
                 if session.revoked_at is not None:
                     return
-                if (claims.authentication_epoch != session.authentication_epoch
-                        or not self._active(session, account, now)):
+                if (
+                    claims.authentication_epoch != session.authentication_epoch
+                    or not self._active(session, account, now)
+                ):
                     raise AccessTokenInvalidError("Access token is invalid")
                 changed = unit.refresh_sessions.revoke_all_for_account(
                     claims.account_id, now, "logout_all"
                 )
                 if changed:
-                    unit.security_events.append(self._event("all_sessions_logged_out", request_id, now, claims.account_id, claims.session_id))
+                    unit.security_events.append(
+                        self._event(
+                            "all_sessions_logged_out",
+                            request_id,
+                            now,
+                            claims.account_id,
+                            claims.session_id,
+                        )
+                    )
                 unit.commit()
-            self._diagnostic("all_sessions_logged_out", "logout_all", "succeeded", request_id, "revoked" if changed else "already_revoked", claims.account_id, claims.session_id)
+            self._diagnostic(
+                "all_sessions_logged_out",
+                "logout_all",
+                "succeeded",
+                request_id,
+                "revoked" if changed else "already_revoked",
+                claims.account_id,
+                claims.session_id,
+            )
         except AuthenticationPersistenceUnavailableError as error:
-            raise SessionDependencyUnavailableError("Session dependency is unavailable") from error
+            raise SessionDependencyUnavailableError(
+                "Session dependency is unavailable"
+            ) from error
 
     @staticmethod
-    def _active(session: RefreshSessionRecord, account: object | None, now: datetime) -> bool:
+    def _active(
+        session: RefreshSessionRecord, account: object | None, now: datetime
+    ) -> bool:
         return bool(
             account is not None
             and account.status is AccountStatus.ACTIVE

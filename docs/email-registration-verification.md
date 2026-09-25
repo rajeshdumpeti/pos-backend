@@ -148,8 +148,8 @@ Operational checks:
   render the driver exception.
 - Encryption/key mismatch: compare configured non-secret key ID/version with
   stored metadata and preserve ciphertext.
-- Schema mismatch: confirm Alembic is at `0004_auth_contract_v1` and run the
-  metadata-parity test.
+- Schema mismatch: confirm Alembic is at current head
+  `0005_authoritative_onboarding` and run the metadata-parity test.
 
 ## Migration
 

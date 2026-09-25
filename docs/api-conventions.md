@@ -26,6 +26,9 @@ support mobile UI development but do not define the final production API.
 | `DELETE` | `/api/v1/auth/sessions` | `204` | No body | See frozen inventory | Authentication | `delete_all_sessions` |
 | `POST` | `/api/v1/auth/password-resets` | `202` | `PasswordResetAcceptedResponse` | See frozen inventory | Authentication | `request_password_reset` |
 | `POST` | `/api/v1/auth/password-resets/confirm` | `204` | No body | See frozen inventory | Authentication | `confirm_password_reset` |
+| `GET` | `/api/v1/onboarding` | `200` | `OnboardingResponse` | `401`, `403`, `422`, `500`, `503` | Onboarding | `get_onboarding_state` |
+| `PATCH` | `/api/v1/onboarding` | `200` | `OnboardingResponse` | `400`, `401`, `403`, `409`, `422`, `500`, `503` | Onboarding | `update_onboarding_state` |
+| `POST` | `/api/v1/onboarding/complete` | `200` | `OnboardingResponse` | `401`, `403`, `409`, `422`, `500`, `503` | Onboarding | `complete_onboarding` |
 
 `/docs` and `/openapi.json` remain local framework endpoints. The dynamic mock
 routes intentionally retain their existing unversioned paths and fixture shapes.
@@ -115,6 +118,11 @@ Current stable codes are:
 | `refresh_session_expired` | `401` | Absolute refresh-session lifetime ended |
 | `refresh_session_replayed` | `409` | Refresh-token reuse revoked the token family |
 | `refresh_idempotency_conflict` | `409` | An idempotency key was reused with different refresh material |
+| `email_verification_required` | `403` | Onboarding requires a verified email |
+| `onboarding_required` | `403` | An explicitly gated product route requires completed onboarding |
+| `onboarding_update_rejected` | `400` | A semantically invalid onboarding update was rejected |
+| `onboarding_incomplete` | `409` | Explicit completion requirements are not satisfied |
+| `onboarding_state_conflict` | `409` | A stale mutation conflicts with newer authoritative state |
 
 Domain errors remain framework-independent. The API boundary maps them to
 status codes and error codes. Validation details contain only `field`, `code`,
