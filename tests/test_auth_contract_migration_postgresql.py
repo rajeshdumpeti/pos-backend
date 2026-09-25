@@ -74,6 +74,7 @@ def test_0004_deduplicates_legacy_receipts_before_enforcing_uniqueness():
 
     try:
         with bind_alembic_to_test_database(TEST_URL):
+            command.upgrade(config, "head")
             command.downgrade(config, "0003_registration_flow")
 
         with engine.begin() as connection:
