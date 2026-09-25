@@ -163,19 +163,22 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
         "create_email_registration",
         "confirm_email_verification",
         "resend_email_verification",
-            "change_unverified_email",
-            "create_email_session",
-            "delete_all_sessions",
-            "refresh_email_session",
-            "get_current_session",
-            "delete_current_session",
-            "request_password_reset",
-            "confirm_password_reset",
-            "get_mock_resource",
+        "change_unverified_email",
+        "create_email_session",
+        "delete_all_sessions",
+        "refresh_email_session",
+        "get_current_session",
+        "delete_current_session",
+        "request_password_reset",
+        "confirm_password_reset",
+        "get_mock_resource",
         "create_mock_resource_item",
         "update_mock_resource_item",
         "delete_mock_resource_item",
         "reset_mock_demo",
+        "get_onboarding_state",
+        "update_onboarding_state",
+        "complete_onboarding",
     ]
     assert len(operation_ids) == len(set(operation_ids))
     assert schema["paths"]["/health"]["get"]["tags"] == ["Health"]
@@ -183,15 +186,56 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
     assert schema["paths"]["/demo/reset"]["post"]["tags"] == ["Demo"]
     assert "ErrorResponse" in schema["components"]["schemas"]
     assert "ItemPatch" in schema["components"]["schemas"]
+    assert "OnboardingResponse" in schema["components"]["schemas"]
+    onboarding = schema["components"]["schemas"]["OnboardingResponse"]["properties"]
+    assert onboarding["goals"] == {
+        "$ref": "#/components/schemas/OnboardingGoalsResponse"
+    }
+    assert onboarding["integration_preferences"] == {
+        "$ref": "#/components/schemas/IntegrationPreferencesResponse"
+    }
+    assert onboarding["notification_preferences"] == {
+        "$ref": "#/components/schemas/NotificationPreferencesResponse"
+    }
+    assert onboarding["priority_life_areas"]["items"]["enum"] == [
+        "health",
+        "nutrition",
+        "fitness",
+        "focus",
+        "money",
+        "habits",
+        "sleep",
+    ]
+    required = set(schema["components"]["schemas"]["OnboardingResponse"]["required"])
+    assert {"completed_at", "unit_preference", "currency_preference"} <= required
+    closed_onboarding_schemas = {
+        "OnboardingResponse",
+        "UnitPreferenceResponse",
+        "CurrencyPreferenceResponse",
+        "OnboardingGoalsResponse",
+        "MeasuredValueResponse",
+        "WaterValueResponse",
+        "BudgetValueResponse",
+        "IntegrationPreferencesResponse",
+        "NotificationPreferencesResponse",
+        "RequirementsResponse",
+        "OnboardingConfigurationResponse",
+    }
+    for name in closed_onboarding_schemas:
+        assert schema["components"]["schemas"][name]["additionalProperties"] is False
+    assert schema["paths"]["/api/v1/onboarding"]["get"]["security"] == [
+        {"HTTPBearer": []}
+    ]
 
     validation_schema = schema["paths"]["/{resource}"]["post"]["responses"]["422"]
     assert "X-Request-ID" in validation_schema["headers"]
     assert validation_schema["content"]["application/json"]["schema"] == {
         "$ref": "#/components/schemas/ErrorResponse"
     }
-    assert schema["paths"]["/{resource}"]["post"]["responses"]["200"][
+    assert schema["paths"]["/{resource}"]["post"]["responses"]["200"]["content"][
+        "application/json"
+    ]["schema"] == {"$ref": "#/components/schemas/Item"}
+    assert (
         "content"
-    ]["application/json"]["schema"] == {"$ref": "#/components/schemas/Item"}
-    assert "content" not in schema["paths"]["/{resource}/{item_id}"]["delete"][
-        "responses"
-    ]["204"]
+        not in schema["paths"]["/{resource}/{item_id}"]["delete"]["responses"]["204"]
+    )

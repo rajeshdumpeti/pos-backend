@@ -55,6 +55,11 @@ from app.infrastructure.authentication.models import (
     UserAccountModel,
 )
 from app.infrastructure.database_diagnostics import raise_safe_database_error
+from app.infrastructure.onboarding_models import (
+    OnboardingStateModel,
+    reconstruct_onboarding_state,
+)
+from app.domain.onboarding import CorruptOnboardingStateError, OnboardingState
 
 
 def _constraint_name(error: IntegrityError) -> str | None:
@@ -143,6 +148,17 @@ class SqlAlchemyUserAccountRepository:
         )
         return None if model is None else _account_record(model)
 
+    def get_onboarding_state(self, account_id: AccountId) -> OnboardingState | None:
+        try:
+            model = self._session.get(OnboardingStateModel, account_id)
+            return None if model is None else reconstruct_onboarding_state(model)
+        except (CorruptOnboardingStateError, SQLAlchemyError) as error:
+            raise_safe_database_error(
+                AuthenticationPersistenceUnavailableError,
+                "Authentication persistence operation failed",
+                error,
+            )
+
     def activate_pending(self, account_id: AccountId, verified_at: datetime) -> bool:
         try:
             result = self._session.execute(
@@ -212,7 +228,9 @@ class SqlAlchemyEmailIdentityRepository:
         self._session.add(EmailIdentityModel(**_record_values(record)))
         _flush(self._session)
 
-    def get_by_normalized_email(self, normalized_email: str) -> EmailIdentityRecord | None:
+    def get_by_normalized_email(
+        self, normalized_email: str
+    ) -> EmailIdentityRecord | None:
         model = _execute_one(
             self._session,
             select(EmailIdentityModel).where(
@@ -369,8 +387,7 @@ class SqlAlchemyEmailVerificationChallengeRepository:
             self._session,
             select(EmailVerificationChallengeModel)
             .where(
-                EmailVerificationChallengeModel.flow_token_digest
-                == flow_token_digest
+                EmailVerificationChallengeModel.flow_token_digest == flow_token_digest
             )
             .with_for_update(),
         )
@@ -629,9 +646,10 @@ class SqlAlchemyRefreshSessionRepository:
     def revoke(
         self, session_id: RefreshSessionId, revoked_at: datetime, reason: str
     ) -> bool:
-        return self._revoke_where(
-            RefreshSessionModel.id == session_id, revoked_at, reason
-        ) == 1
+        return (
+            self._revoke_where(RefreshSessionModel.id == session_id, revoked_at, reason)
+            == 1
+        )
 
     def revoke_family(
         self, token_family_id: UUID, revoked_at: datetime, reason: str
@@ -649,7 +667,9 @@ class SqlAlchemyRefreshSessionRepository:
             RefreshSessionModel.user_account_id == account_id, revoked_at, reason
         )
 
-    def _revoke_where(self, predicate: object, revoked_at: datetime, reason: str) -> int:
+    def _revoke_where(
+        self, predicate: object, revoked_at: datetime, reason: str
+    ) -> int:
         try:
             result = self._session.execute(
                 update(RefreshSessionModel)
@@ -765,7 +785,8 @@ class SqlAlchemyAuthenticationAttemptStateRepository:
             .on_conflict_do_update(
                 constraint="uq_authentication_attempt_states__identity_digest__62b111e31b",
                 set_={
-                    "failed_attempts": AuthenticationAttemptStateModel.failed_attempts + 1,
+                    "failed_attempts": AuthenticationAttemptStateModel.failed_attempts
+                    + 1,
                     "last_attempt_at": now,
                     "progressive_delay_until": progressive_delay_until,
                     "locked_until": locked_until,
@@ -798,6 +819,7 @@ class SqlAlchemySecurityEventRepository:
 
 class SqlAlchemyAuthenticationEmailOutboxRepository:
     _CLAIM_LEASE = timedelta(minutes=5)
+
     def __init__(self, session: Session) -> None:
         self._session = session
 
@@ -848,20 +870,29 @@ class SqlAlchemyAuthenticationEmailOutboxRepository:
         return [_outbox_record(model) for model in models]
 
     def mark_delivered(
-        self, outbox_id: UUID, claim_id: UUID, delivered_at: datetime,
+        self,
+        outbox_id: UUID,
+        claim_id: UUID,
+        delivered_at: datetime,
         provider_message_id: str,
     ) -> bool:
         return self._mark_claimed(
-            outbox_id, claim_id, status=OutboxStatus.DELIVERED,
-            delivered_at=delivered_at, provider_message_id=provider_message_id,
+            outbox_id,
+            claim_id,
+            status=OutboxStatus.DELIVERED,
+            delivered_at=delivered_at,
+            provider_message_id=provider_message_id,
         )
 
     def mark_failed(
         self, outbox_id: UUID, claim_id: UUID, failed_at: datetime, category: str
     ) -> bool:
         return self._mark_claimed(
-            outbox_id, claim_id, status=OutboxStatus.FAILED,
-            failed_at=failed_at, failure_category=category,
+            outbox_id,
+            claim_id,
+            status=OutboxStatus.FAILED,
+            failed_at=failed_at,
+            failure_category=category,
         )
 
     def release_for_retry(
@@ -887,12 +918,17 @@ class SqlAlchemyAuthenticationEmailOutboxRepository:
         except SQLAlchemyError as error:
             raise_safe_database_error(
                 AuthenticationPersistenceUnavailableError,
-                "Authentication persistence operation failed", error,
+                "Authentication persistence operation failed",
+                error,
             )
         return result.rowcount == 1
 
     def _mark_claimed(
-        self, outbox_id: UUID, claim_id: UUID, *, status: OutboxStatus,
+        self,
+        outbox_id: UUID,
+        claim_id: UUID,
+        *,
+        status: OutboxStatus,
         delivered_at: datetime | None = None,
         failed_at: datetime | None = None,
         provider_message_id: str | None = None,
@@ -907,8 +943,10 @@ class SqlAlchemyAuthenticationEmailOutboxRepository:
                     AuthenticationEmailOutboxModel.claim_id == claim_id,
                 )
                 .values(
-                    status=status.value, delivered_at=delivered_at,
-                    failed_at=failed_at, provider_message_id=provider_message_id,
+                    status=status.value,
+                    delivered_at=delivered_at,
+                    failed_at=failed_at,
+                    provider_message_id=provider_message_id,
                     failure_category=failure_category,
                     attempt_count=AuthenticationEmailOutboxModel.attempt_count + 1,
                 )
@@ -916,7 +954,8 @@ class SqlAlchemyAuthenticationEmailOutboxRepository:
         except SQLAlchemyError as error:
             raise_safe_database_error(
                 AuthenticationPersistenceUnavailableError,
-                "Authentication persistence operation failed", error,
+                "Authentication persistence operation failed",
+                error,
             )
         return result.rowcount == 1
 
@@ -925,50 +964,170 @@ def _account_record(model: object) -> UserAccountRecord:
     if not isinstance(model, UserAccountModel):
         raise UnexpectedAuthenticationPersistenceError("Unexpected account record")
     return UserAccountRecord(
-        id=AccountId(model.id), status=AccountStatus(model.status), display_name=model.display_name,
-        password_hash=model.password_hash, email_verified_at=model.email_verified_at,
-        onboarding_required=model.onboarding_required, authentication_epoch=model.authentication_epoch,
-        terms_version=model.terms_version, terms_accepted_at=model.terms_accepted_at,
-        privacy_version=model.privacy_version, privacy_accepted_at=model.privacy_accepted_at,
-        deletion_requested_at=model.deletion_requested_at, deleted_at=model.deleted_at,
-        created_at=model.created_at, updated_at=model.updated_at,
+        id=AccountId(model.id),
+        status=AccountStatus(model.status),
+        display_name=model.display_name,
+        password_hash=model.password_hash,
+        email_verified_at=model.email_verified_at,
+        onboarding_required=model.onboarding_required,
+        authentication_epoch=model.authentication_epoch,
+        terms_version=model.terms_version,
+        terms_accepted_at=model.terms_accepted_at,
+        privacy_version=model.privacy_version,
+        privacy_accepted_at=model.privacy_accepted_at,
+        deletion_requested_at=model.deletion_requested_at,
+        deleted_at=model.deleted_at,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
     )
 
 
 def _email_record(model: object) -> EmailIdentityRecord:
     assert isinstance(model, EmailIdentityModel)
-    return EmailIdentityRecord(id=IdentityId(model.id), user_account_id=AccountId(model.user_account_id), display_email=model.display_email, normalized_email=model.normalized_email, is_verified=model.is_verified, is_primary=model.is_primary, verified_at=model.verified_at, created_at=model.created_at, updated_at=model.updated_at)
+    return EmailIdentityRecord(
+        id=IdentityId(model.id),
+        user_account_id=AccountId(model.user_account_id),
+        display_email=model.display_email,
+        normalized_email=model.normalized_email,
+        is_verified=model.is_verified,
+        is_primary=model.is_primary,
+        verified_at=model.verified_at,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
 
 
 def _provider_record(model: object) -> ExternalProviderIdentityRecord:
     assert isinstance(model, ExternalProviderIdentityModel)
-    return ExternalProviderIdentityRecord(id=IdentityId(model.id), user_account_id=AccountId(model.user_account_id), provider=AuthenticationProvider(model.provider), provider_subject=model.provider_subject, email_snapshot=model.email_snapshot, email_verified=model.email_verified, is_private_relay=model.is_private_relay, first_authenticated_at=model.first_authenticated_at, last_authenticated_at=model.last_authenticated_at, created_at=model.created_at, updated_at=model.updated_at)
+    return ExternalProviderIdentityRecord(
+        id=IdentityId(model.id),
+        user_account_id=AccountId(model.user_account_id),
+        provider=AuthenticationProvider(model.provider),
+        provider_subject=model.provider_subject,
+        email_snapshot=model.email_snapshot,
+        email_verified=model.email_verified,
+        is_private_relay=model.is_private_relay,
+        first_authenticated_at=model.first_authenticated_at,
+        last_authenticated_at=model.last_authenticated_at,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
 
 
 def _verification_record(model: object) -> EmailVerificationChallengeRecord:
     assert isinstance(model, EmailVerificationChallengeModel)
-    return EmailVerificationChallengeRecord(id=ChallengeId(model.id), user_account_id=AccountId(model.user_account_id), purpose=ChallengePurpose(model.purpose), flow_token_digest=model.flow_token_digest, code_digest=model.code_digest, target_normalized_email=model.target_normalized_email, issued_at=model.issued_at, expires_at=model.expires_at, flow_expires_at=model.flow_expires_at, resend_available_at=model.resend_available_at, digest_key_id=model.digest_key_id, digest_key_version=model.digest_key_version, completion_action=ChallengeCompletionAction(model.completion_action), attempts=model.attempts, max_attempts=model.max_attempts, status_version=model.status_version, consumed_at=model.consumed_at, superseded_by_id=None if model.superseded_by_id is None else ChallengeId(model.superseded_by_id))
+    return EmailVerificationChallengeRecord(
+        id=ChallengeId(model.id),
+        user_account_id=AccountId(model.user_account_id),
+        purpose=ChallengePurpose(model.purpose),
+        flow_token_digest=model.flow_token_digest,
+        code_digest=model.code_digest,
+        target_normalized_email=model.target_normalized_email,
+        issued_at=model.issued_at,
+        expires_at=model.expires_at,
+        flow_expires_at=model.flow_expires_at,
+        resend_available_at=model.resend_available_at,
+        digest_key_id=model.digest_key_id,
+        digest_key_version=model.digest_key_version,
+        completion_action=ChallengeCompletionAction(model.completion_action),
+        attempts=model.attempts,
+        max_attempts=model.max_attempts,
+        status_version=model.status_version,
+        consumed_at=model.consumed_at,
+        superseded_by_id=(
+            None
+            if model.superseded_by_id is None
+            else ChallengeId(model.superseded_by_id)
+        ),
+    )
 
 
 def _reset_record(model: object) -> PasswordResetChallengeRecord:
     assert isinstance(model, PasswordResetChallengeModel)
-    return PasswordResetChallengeRecord(id=ChallengeId(model.id), user_account_id=AccountId(model.user_account_id), token_digest=model.token_digest, request_security_digest=model.request_security_digest, issued_at=model.issued_at, expires_at=model.expires_at, consumed_at=model.consumed_at)
+    return PasswordResetChallengeRecord(
+        id=ChallengeId(model.id),
+        user_account_id=AccountId(model.user_account_id),
+        token_digest=model.token_digest,
+        request_security_digest=model.request_security_digest,
+        issued_at=model.issued_at,
+        expires_at=model.expires_at,
+        consumed_at=model.consumed_at,
+    )
 
 
 def _refresh_record(model: object) -> RefreshSessionRecord:
     assert isinstance(model, RefreshSessionModel)
-    return RefreshSessionRecord(id=RefreshSessionId(model.id), user_account_id=AccountId(model.user_account_id), token_family_id=model.token_family_id, current_token_digest=model.current_token_digest, remember_me=model.remember_me, authentication_epoch=model.authentication_epoch, device_metadata=model.device_metadata, created_at=model.created_at, last_used_at=model.last_used_at, expires_at=model.expires_at, revoked_at=model.revoked_at, revocation_reason=model.revocation_reason)
+    return RefreshSessionRecord(
+        id=RefreshSessionId(model.id),
+        user_account_id=AccountId(model.user_account_id),
+        token_family_id=model.token_family_id,
+        current_token_digest=model.current_token_digest,
+        remember_me=model.remember_me,
+        authentication_epoch=model.authentication_epoch,
+        device_metadata=model.device_metadata,
+        created_at=model.created_at,
+        last_used_at=model.last_used_at,
+        expires_at=model.expires_at,
+        revoked_at=model.revoked_at,
+        revocation_reason=model.revocation_reason,
+    )
 
 
 def _receipt_record(model: object) -> RefreshRotationReceiptRecord:
     assert isinstance(model, RefreshRotationRetryReceiptModel)
-    return RefreshRotationReceiptRecord(id=model.id, refresh_session_id=RefreshSessionId(model.refresh_session_id), token_family_id=model.token_family_id, previous_token_digest=model.previous_token_digest, refresh_request_id=model.refresh_request_id, response_ciphertext=model.response_ciphertext, encryption_key_id=model.encryption_key_id, encryption_key_version=model.encryption_key_version, created_at=model.created_at, expires_at=model.expires_at, consumed_at=model.consumed_at)
+    return RefreshRotationReceiptRecord(
+        id=model.id,
+        refresh_session_id=RefreshSessionId(model.refresh_session_id),
+        token_family_id=model.token_family_id,
+        previous_token_digest=model.previous_token_digest,
+        refresh_request_id=model.refresh_request_id,
+        response_ciphertext=model.response_ciphertext,
+        encryption_key_id=model.encryption_key_id,
+        encryption_key_version=model.encryption_key_version,
+        created_at=model.created_at,
+        expires_at=model.expires_at,
+        consumed_at=model.consumed_at,
+    )
 
 
 def _attempt_record(model: object) -> AuthenticationAttemptStateRecord:
     assert isinstance(model, AuthenticationAttemptStateModel)
-    return AuthenticationAttemptStateRecord(id=model.id, identity_digest=model.identity_digest, risk_bucket_digest=model.risk_bucket_digest, failed_attempts=model.failed_attempts, window_started_at=model.window_started_at, last_attempt_at=model.last_attempt_at, progressive_delay_until=model.progressive_delay_until, locked_until=model.locked_until, created_at=model.created_at, updated_at=model.updated_at)
+    return AuthenticationAttemptStateRecord(
+        id=model.id,
+        identity_digest=model.identity_digest,
+        risk_bucket_digest=model.risk_bucket_digest,
+        failed_attempts=model.failed_attempts,
+        window_started_at=model.window_started_at,
+        last_attempt_at=model.last_attempt_at,
+        progressive_delay_until=model.progressive_delay_until,
+        locked_until=model.locked_until,
+        created_at=model.created_at,
+        updated_at=model.updated_at,
+    )
 
 
-def _outbox_record(model: AuthenticationEmailOutboxModel) -> AuthenticationEmailOutboxRecord:
-    return AuthenticationEmailOutboxRecord(id=model.id, user_account_id=None if model.user_account_id is None else AccountId(model.user_account_id), message_kind=OutboxMessageKind(model.message_kind), recipient_normalized_email=model.recipient_normalized_email, payload_ciphertext=model.payload_ciphertext, encryption_key_id=model.encryption_key_id, encryption_key_version=model.encryption_key_version, deduplication_key=model.deduplication_key, status=OutboxStatus(model.status), created_at=model.created_at, available_at=model.available_at, claimed_at=model.claimed_at, claim_id=model.claim_id, attempt_count=model.attempt_count, delivered_at=model.delivered_at, failed_at=model.failed_at, provider_message_id=model.provider_message_id, failure_category=model.failure_category)
+def _outbox_record(
+    model: AuthenticationEmailOutboxModel,
+) -> AuthenticationEmailOutboxRecord:
+    return AuthenticationEmailOutboxRecord(
+        id=model.id,
+        user_account_id=(
+            None if model.user_account_id is None else AccountId(model.user_account_id)
+        ),
+        message_kind=OutboxMessageKind(model.message_kind),
+        recipient_normalized_email=model.recipient_normalized_email,
+        payload_ciphertext=model.payload_ciphertext,
+        encryption_key_id=model.encryption_key_id,
+        encryption_key_version=model.encryption_key_version,
+        deduplication_key=model.deduplication_key,
+        status=OutboxStatus(model.status),
+        created_at=model.created_at,
+        available_at=model.available_at,
+        claimed_at=model.claimed_at,
+        claim_id=model.claim_id,
+        attempt_count=model.attempt_count,
+        delivered_at=model.delivered_at,
+        failed_at=model.failed_at,
+        provider_message_id=model.provider_message_id,
+        failure_category=model.failure_category,
+    )

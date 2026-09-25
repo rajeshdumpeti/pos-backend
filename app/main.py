@@ -26,8 +26,12 @@ from app.infrastructure.authentication.registration import (
     SafeAuthenticationAvailabilityDiagnostic,
 )
 from app.infrastructure.authentication.session_composition import compose_email_sessions
-from app.infrastructure.authentication.password_recovery_composition import compose_password_recovery
+from app.infrastructure.authentication.password_recovery_composition import (
+    compose_password_recovery,
+)
 from app.infrastructure.database import dispose_database_engine
+from app.application.onboarding import OnboardingService
+from app.infrastructure.onboarding import compose_onboarding
 
 
 AUTHENTICATION_CONTRACT_VERSION = "1.1.0"
@@ -39,6 +43,7 @@ def create_app(
     email_registration_service: EmailRegistrationService | None = None,
     email_session_service: EmailSessionService | None = None,
     password_recovery_service: PasswordRecoveryService | None = None,
+    onboarding_service: OnboardingService | None = None,
 ) -> FastAPI:
     """Compose one isolated FastAPI application from concrete local dependencies."""
     resolved_settings = app_settings if app_settings is not None else load_settings()
@@ -46,8 +51,12 @@ def create_app(
 
     admission, close_admission = compose_admission(resolved_settings)
     application.add_event_handler("shutdown", close_admission)
-    application.add_middleware(AuthenticationSecurityMiddleware, admission=admission,
-        settings=resolved_settings, diagnostic=SafeAuthenticationEventLogger())
+    application.add_middleware(
+        AuthenticationSecurityMiddleware,
+        admission=admission,
+        settings=resolved_settings,
+        diagnostic=SafeAuthenticationEventLogger(),
+    )
     configure_cors(application, resolved_settings)
     configure_request_ids(application)
     register_exception_handlers(application)
@@ -59,12 +68,11 @@ def create_app(
         )
 
     resource_service = MockResourceService(resource_unit_of_work_factory)
-    authentication_availability_diagnostic = (
-        SafeAuthenticationAvailabilityDiagnostic()
-    )
+    authentication_availability_diagnostic = SafeAuthenticationAvailabilityDiagnostic()
     authentication_composition = None
     session_composition = None
     password_recovery_composition = None
+    onboarding_composition = None
     if email_registration_service is None:
         authentication_composition = compose_email_registration(resolved_settings)
         if authentication_composition is not None:
@@ -93,6 +101,26 @@ def create_app(
         if password_recovery_composition is not None:
             password_recovery_service = password_recovery_composition.service
 
+    if onboarding_service is None:
+        shared_engine = (
+            authentication_composition.engine
+            if authentication_composition is not None
+            else (
+                session_composition.engine
+                if session_composition is not None
+                else (
+                    password_recovery_composition.engine
+                    if password_recovery_composition is not None
+                    else None
+                )
+            )
+        )
+        onboarding_composition = compose_onboarding(
+            resolved_settings, shared_engine=shared_engine
+        )
+        if onboarding_composition is not None:
+            onboarding_service = onboarding_composition.service
+
     application.include_router(
         create_api_router(
             resource_service,
@@ -100,53 +128,56 @@ def create_app(
             authentication_availability_diagnostic,
             email_session_service,
             password_recovery_service,
-            RegistrationPolicyResult(
-                legal_consent_required=(
-                    resolved_settings.auth_legal_consent_mode
-                    is AuthenticationLegalConsentMode.REQUIRED
-                ),
-                legal_policy_status=(
-                    LegalPolicyStatus.ACTIVE
-                    if resolved_settings.auth_legal_consent_mode
-                    is AuthenticationLegalConsentMode.REQUIRED
-                    else LegalPolicyStatus.DEFERRED_NONPRODUCTION
-                ),
-                terms_version=(
-                    resolved_settings.current_terms_version
-                    if resolved_settings.auth_legal_consent_mode
-                    is AuthenticationLegalConsentMode.REQUIRED
-                    else None
-                ),
-                terms_url=(
-                    resolved_settings.current_terms_url
-                    if resolved_settings.auth_legal_consent_mode
-                    is AuthenticationLegalConsentMode.REQUIRED
-                    else None
-                ),
-                privacy_version=(
-                    resolved_settings.current_privacy_version
-                    if resolved_settings.auth_legal_consent_mode
-                    is AuthenticationLegalConsentMode.REQUIRED
-                    else None
-                ),
-                privacy_url=(
-                    resolved_settings.current_privacy_url
-                    if resolved_settings.auth_legal_consent_mode
-                    is AuthenticationLegalConsentMode.REQUIRED
-                    else None
-                ),
-            )
-            if (
-                resolved_settings.auth_legal_consent_mode
-                is AuthenticationLegalConsentMode.DEFERRED_NONPRODUCTION
-                or (
-                    resolved_settings.current_terms_version is not None
-                    and resolved_settings.current_terms_url is not None
-                    and resolved_settings.current_privacy_version is not None
-                    and resolved_settings.current_privacy_url is not None
+            (
+                RegistrationPolicyResult(
+                    legal_consent_required=(
+                        resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                    ),
+                    legal_policy_status=(
+                        LegalPolicyStatus.ACTIVE
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else LegalPolicyStatus.DEFERRED_NONPRODUCTION
+                    ),
+                    terms_version=(
+                        resolved_settings.current_terms_version
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                    terms_url=(
+                        resolved_settings.current_terms_url
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                    privacy_version=(
+                        resolved_settings.current_privacy_version
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                    privacy_url=(
+                        resolved_settings.current_privacy_url
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
                 )
-            )
-            else None,
+                if (
+                    resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.DEFERRED_NONPRODUCTION
+                    or (
+                        resolved_settings.current_terms_version is not None
+                        and resolved_settings.current_terms_url is not None
+                        and resolved_settings.current_privacy_version is not None
+                        and resolved_settings.current_privacy_url is not None
+                    )
+                )
+                else None
+            ),
+            onboarding_service,
         )
     )
 
@@ -181,6 +212,15 @@ def create_app(
         application.add_event_handler(
             "shutdown",
             lambda: dispose_database_engine(password_recovery_composition.engine),
+        )
+    if (
+        onboarding_composition is not None
+        and authentication_composition is None
+        and session_composition is None
+        and password_recovery_composition is None
+    ):
+        application.add_event_handler(
+            "shutdown", lambda: dispose_database_engine(onboarding_composition.engine)
         )
 
     return application

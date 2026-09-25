@@ -83,8 +83,16 @@ currently composes one active version and safely rejects unavailable versions.
 Milestone 07-02 already supplied `refresh_sessions`,
 `refresh_rotation_retry_receipts`, and `security_events`, including the required
 constraints and indexes. 07-04 adds repository operations only; it creates no
-table, product model, seed, or Alembic revision. The database must remain at
-`0004_auth_contract_v1 (head)`.
+table, product model, seed, or authentication revision. The authentication
+schema contribution remains `0004_auth_contract_v1`; the database must be at
+the repository's current Alembic head `0005_authoritative_onboarding`.
+
+The unchanged `onboarding_required` response field is a compatibility projection.
+Authentication reconstructs the authoritative onboarding row and applies its
+complete invariant in the existing authentication Unit of Work. Missing state
+returns `true`, valid completed state returns `false`, corrupt state fails safely,
+and a refresh retry re-reads current state instead of replaying a historical
+value.
 
 ## Validation
 

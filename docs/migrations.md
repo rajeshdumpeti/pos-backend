@@ -38,11 +38,19 @@ flow lifecycle/key metadata and deferred challenge-supersession support required
 by email registration. See
 [`email-registration-verification.md`](email-registration-verification.md).
 
-Revision `0004_auth_contract_v1` is the single current head. It adds a unique
+Revision `0004_auth_contract_v1` adds a unique
 constraint on `refresh_rotation_retry_receipts.refresh_request_id`, binding one
 logical refresh key to one request payload under concurrency. Before upgrading a
 database containing pre-release traffic, verify that no duplicate request IDs
 exist. The migration fails safely rather than choosing a receipt to delete.
+
+Revision `0005_authoritative_onboarding` is the single current head. It creates
+one account-owned onboarding state, strict required-preference checks, typed
+optional JSONB containers, optimistic versioning, timestamps, and cascade
+deletion. A completed-state CHECK requires non-empty priorities and confirmed
+supported unit and currency values whenever `completed_at` is non-null. It
+performs no legacy-account backfill; absence remains incomplete.
+See [`onboarding.md`](onboarding.md).
 
 Inspect the graph without connecting to a database:
 
@@ -127,9 +135,12 @@ are never required for ordinary CI.
   `0003_registration_flow`; it adds no table or seed data.
 - Milestone 07-09 extends it through `0004_auth_contract_v1`; it adds only the
   refresh-receipt request-ID uniqueness constraint and seeds no data.
+- Milestone 2.A extends it through `0005_authoritative_onboarding`; it adds the
+  onboarding state table and seeds or backfills no account data.
 
 The baseline creates no product schema. Revision `0002_auth_persistence` creates
 authentication persistence only. Revision `0003_registration_flow` adds no
 product schema or seed data; runtime behavior remains owned by application and
 infrastructure composition. Revision `0004_auth_contract_v1` changes no product
-schema and deletes no data.
+schema and deletes no data. Revision `0005_authoritative_onboarding` adds the
+reversible onboarding table without modifying existing account rows.
