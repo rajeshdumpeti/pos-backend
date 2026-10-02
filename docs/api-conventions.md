@@ -208,3 +208,10 @@ so unexpected JSON property names cannot reflect sensitive material. Success
 schemas and operation IDs are unchanged. See
 [security policy](authentication-security-hardening.md) and
 [frontend handoff](frontend-auth-security-handoff.md).
+
+## Today Dashboard Core v1
+
+Daily planning and Today API inventory, closed schemas, product eligibility, safe
+conflicts, idempotency, timezone rules and supported actions are documented in
+[today-dashboard.md](today-dashboard.md) and the
+[frontend handoff](frontend-today-dashboard-handoff.md).

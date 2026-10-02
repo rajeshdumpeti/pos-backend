@@ -179,6 +179,11 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
         "get_onboarding_state",
         "update_onboarding_state",
         "complete_onboarding",
+        "create_plan_item",
+        "get_plan_item",
+        "update_plan_item",
+        "complete_plan_item",
+        "get_today_dashboard",
     ]
     assert len(operation_ids) == len(set(operation_ids))
     assert schema["paths"]["/health"]["get"]["tags"] == ["Health"]

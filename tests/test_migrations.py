@@ -85,6 +85,8 @@ def test_declarative_base_uses_canonical_authentication_metadata():
         "security_events",
         "user_accounts",
         "onboarding_states",
+        "plan_items",
+        "plan_creation_receipts",
     }
 
 
@@ -143,7 +145,7 @@ def test_alembic_configuration_and_single_baseline_head_load():
     script = ScriptDirectory.from_config(config)
 
     assert Path(script.dir).resolve() == (ROOT / "migrations").resolve()
-    assert script.get_heads() == ["0005_authoritative_onboarding"]
+    assert script.get_heads() == ["0006_daily_planning"]
     revision = script.get_revision("0001_migration_foundation")
     assert revision is not None
     assert revision.down_revision is None

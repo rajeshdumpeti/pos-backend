@@ -212,3 +212,10 @@ The [frontend security handoff](docs/frontend-auth-security-handoff.md) defines
 429 handling, privacy-safe states and session-expired navigation requirements.
 Google, Apple and biometrics are deferred to a later MVP. Milestone 07-09 freezes
 the email/password contract as v1.0.0; generated OpenAPI carries the same version.
+
+## Today Dashboard Core v1
+
+The authenticated daily planning slice and deterministic Today projection are
+documented in [Today architecture](docs/today-dashboard.md) and the
+[frontend handoff](docs/frontend-today-dashboard-handoff.md). Only implemented
+planning actions are exposed; unsupported measurements remain unavailable.
