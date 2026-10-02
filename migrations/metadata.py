@@ -2,7 +2,7 @@
 
 from app.infrastructure.relational import RELATIONAL_METADATA
 from app.infrastructure.authentication import models as authentication_models
-from app.infrastructure import onboarding_models
+from app.infrastructure import onboarding_models, planning_models
 
 
 _ = authentication_models
@@ -10,3 +10,6 @@ _ = onboarding_models
 
 
 target_metadata = RELATIONAL_METADATA
+
+
+_ = planning_models

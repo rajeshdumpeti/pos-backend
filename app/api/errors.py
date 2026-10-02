@@ -9,6 +9,14 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.schemas import ErrorDetail, ErrorResponse
+from app.domain.planning import (
+    PlanError,
+    PlanValidationError,
+    PlanConflictError,
+    PlanIdempotencyConflictError,
+    PlanNotFoundError,
+    PlanUnavailableError,
+)
 from app.application.email_registration import (
     AccountAlreadyExistsError,
     AuthenticationConfigurationUnavailableError,
@@ -125,9 +133,40 @@ def register_exception_handlers(application: FastAPI) -> None:
         PasswordRecoveryError, _handle_password_recovery_error
     )
     application.add_exception_handler(OnboardingError, _handle_onboarding_error)
+    application.add_exception_handler(PlanError, _handle_plan_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(StarletteHTTPException, _handle_http_error)
     application.add_exception_handler(Exception, _handle_unexpected_error)
+
+
+async def _handle_plan_error(request: Request, error: PlanError) -> JSONResponse:
+    mappings = {
+        PlanValidationError: (
+            422,
+            "request_validation_failed",
+            "The request could not be validated",
+        ),
+        PlanConflictError: (
+            409,
+            "plan_item_state_conflict",
+            "Plan item version conflicts",
+        ),
+        PlanIdempotencyConflictError: (
+            409,
+            "plan_item_idempotency_conflict",
+            "Idempotency key conflicts",
+        ),
+        PlanNotFoundError: (404, "item_not_found", "Item not found"),
+        PlanUnavailableError: (
+            503,
+            "dependency_unavailable",
+            "A required dependency is unavailable",
+        ),
+    }
+    code, name, message = mappings.get(
+        type(error), (500, "internal_server_error", "An unexpected error occurred")
+    )
+    return _error_response(request, code, name, message)
 
 
 async def _handle_onboarding_error(
@@ -214,7 +253,9 @@ async def _handle_validation_error(
 ) -> JSONResponse:
     details = (
         []
-        if request.url.path.startswith("/api/v1/auth")
+        if request.url.path.startswith(
+            ("/api/v1/auth", "/api/v1/plan", "/api/v1/today")
+        )
         else [_validation_detail(error_detail) for error_detail in error.errors()]
     )
     return _error_response(
@@ -477,7 +518,9 @@ def _error_response(
 ) -> JSONResponse:
     request_id = get_request_id(request)
     headers = dict(extra_headers or {})
-    if request.url.path.startswith("/api/v1/onboarding"):
+    if request.url.path.startswith(
+        ("/api/v1/onboarding", "/api/v1/plan", "/api/v1/today")
+    ):
         headers["Cache-Control"] = "no-store"
         headers["Pragma"] = "no-cache"
     headers[REQUEST_ID_HEADER] = request_id

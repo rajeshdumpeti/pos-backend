@@ -95,3 +95,7 @@ Password-reset orchestration remains in the application layer; SQLAlchemy
 locking and outbox state transitions remain infrastructure concerns. The
 provider-neutral worker decrypts only claimed messages at the delivery boundary.
 See [`password-recovery-and-email-delivery.md`](password-recovery-and-email-delivery.md).
+
+Milestone 2.B adds the domain-owned planning vertical slice and read-only Today
+projection through the same ports and Unit-of-Work direction. See
+[today-dashboard.md](today-dashboard.md).

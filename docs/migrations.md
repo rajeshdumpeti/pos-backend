@@ -44,7 +44,7 @@ logical refresh key to one request payload under concurrency. Before upgrading a
 database containing pre-release traffic, verify that no duplicate request IDs
 exist. The migration fails safely rather than choosing a receipt to delete.
 
-Revision `0005_authoritative_onboarding` is the single current head. It creates
+Revision `0005_authoritative_onboarding` precedes daily planning. It creates
 one account-owned onboarding state, strict required-preference checks, typed
 optional JSONB containers, optimistic versioning, timestamps, and cascade
 deletion. A completed-state CHECK requires non-empty priorities and confirmed
@@ -144,3 +144,8 @@ product schema or seed data; runtime behavior remains owned by application and
 infrastructure composition. Revision `0004_auth_contract_v1` changes no product
 schema and deletes no data. Revision `0005_authoritative_onboarding` adds the
 reversible onboarding table without modifying existing account rows.
+
+Revision `0006_daily_planning` is the single current head. It adds account-owned
+plan items and atomic creation receipts, with no seeds/backfills or changes to
+0004/0005. See [Today architecture](today-dashboard.md) for constraints, indexes,
+transaction rules and the guarded reversible validation sequence.
