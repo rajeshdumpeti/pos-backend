@@ -219,3 +219,11 @@ The authenticated daily planning slice and deterministic Today projection are
 documented in [Today architecture](docs/today-dashboard.md) and the
 [frontend handoff](docs/frontend-today-dashboard-handoff.md). Only implemented
 planning actions are exposed; unsupported measurements remain unavailable.
+
+## Plan v1 selected-date read
+
+GET `/api/v1/plan` adds authoritative selected-date items, full-date summary,
+opaque cursor pagination and deterministic Plan Insight using existing plan_items.
+Plan contract 1.0 is separate from unchanged Today 1.0. See
+[Plan architecture](docs/plan-v1.md) and
+[frontend Plan handoff](docs/frontend-plan-v1-handoff.md).

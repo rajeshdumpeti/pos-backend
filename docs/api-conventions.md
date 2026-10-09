@@ -215,3 +215,11 @@ Daily planning and Today API inventory, closed schemas, product eligibility, saf
 conflicts, idempotency, timezone rules and supported actions are documented in
 [today-dashboard.md](today-dashboard.md) and the
 [frontend handoff](frontend-today-dashboard-handoff.md).
+
+## Plan selected-date contract 1.0
+
+GET `/api/v1/plan` requires selected_date/timezone and uses limit 50 (max 100),
+opaque account/date/timezone-scoped cursors, named closed schemas and current-only
+freshness. Summary/insight cover the full date. Past dates describe current state.
+Mutations require refetch from page one; inter-page snapshots are not promised.
+See [Plan v1](plan-v1.md) and [frontend handoff](frontend-plan-v1-handoff.md).

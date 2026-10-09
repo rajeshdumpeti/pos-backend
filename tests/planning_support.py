@@ -33,6 +33,14 @@ class Repository:
         self.store.items[item.id] = item
         return True
 
+    def selected_date_facts(self, account_id, day):
+        return [
+            item
+            for item in self.store.items.values()
+            if item.user_account_id == account_id
+            and item.intent.scheduled_for_date == day
+        ]
+
     def today_facts(self, account_id, day, start, end):
         return [
             item
