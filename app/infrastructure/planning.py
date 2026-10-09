@@ -145,6 +145,17 @@ class SqlAlchemyPlanRepository:
             for model in self._session.scalars(query)
         ]
 
+    def selected_date_facts(
+        self, account_id: UUID, selected_date: date
+    ) -> list[PlanItem]:
+        # A single statement provides mutually consistent full-date facts.
+        return self._list(
+            select(PlanItemModel).where(
+                PlanItemModel.user_account_id == account_id,
+                PlanItemModel.scheduled_for_date == selected_date,
+            )
+        )
+
     def today_facts(
         self, account_id: UUID, local_date: date, start: datetime, end: datetime
     ) -> list[PlanItem]:
@@ -232,6 +243,8 @@ class SafePlanDiagnostic:
     ) -> None:
         if operation not in {
             "today_read",
+            "plan_selected_date_read",
+            "plan_insight_unavailable",
             "plan_item_create",
             "plan_item_update",
             "plan_item_complete",
@@ -239,10 +252,18 @@ class SafePlanDiagnostic:
             return
         try:
             LOGGER.info(
-                "planning_operation_succeeded",
+                (
+                    "planning_insight_unavailable"
+                    if operation == "plan_insight_unavailable"
+                    else "planning_operation_succeeded"
+                ),
                 extra={
                     "operation": operation,
-                    "outcome": "succeeded",
+                    "outcome": (
+                        "unavailable"
+                        if operation == "plan_insight_unavailable"
+                        else "succeeded"
+                    ),
                     "request_id": request_id if len(request_id) <= 64 else "redacted",
                     "account_id": (
                         str(account_id) if isinstance(account_id, UUID) else "redacted"

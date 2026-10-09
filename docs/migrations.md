@@ -149,3 +149,8 @@ Revision `0006_daily_planning` is the single current head. It adds account-owned
 plan items and atomic creation receipts, with no seeds/backfills or changes to
 0004/0005. See [Today architecture](today-dashboard.md) for constraints, indexes,
 transaction rules and the guarded reversible validation sequence.
+
+Milestone 2.C selected-date [Plan v1](plan-v1.md) makes no schema change. The
+existing account/date/start index supports its equality-filtered full-date facts;
+global sorting is application-owned. Head and model metadata remain unchanged at
+0006_daily_planning, with existing offline parity and guarded live parity checks.

@@ -17,6 +17,8 @@ from app.api.planning_schemas import (
 )
 from app.application.planning import PlanService
 from app.application.today import TodayService
+from app.application.plan_selected_date import PlanSelectedDateService
+from app.api.plan_read_schemas import PlanSelectedDateQuery, PlanSelectedDateResponse
 from app.application.onboarding import OnboardingDependencyUnavailableError
 from app.application.session_lifecycle import AuthenticationRequiredError
 from app.core import get_request_id
@@ -200,6 +202,47 @@ def create_planning_router(
         return TodayResponse.model_validate(
             TodayService(service()).get(
                 state.user_account_id, query.timezone, state, get_request_id(request)
+            )
+        )
+
+    @router.get(
+        "/api/v1/plan",
+        operation_id="get_plan_selected_date",
+        response_model=PlanSelectedDateResponse,
+        responses={
+            code: value
+            for code, value in responses(200).items()
+            if code not in (404, 409)
+        },
+        summary="Read authoritative items assigned to a selected date",
+        description=(
+            "Plan contract 1.0. Ownership uses the authenticated account and explicit "
+            "scheduled_for_date. Requested timezone determines past/current/future; "
+            "stored scheduling intent is preserved. Past dates show current state. "
+            "Summary and deterministic insight cover the full selected date. "
+            "Order: scheduled incomplete by start/UUID, unscheduled incomplete by "
+            "priority descending/creation/UUID, completed by completion descending/UUID. "
+            "Cursors are opaque and account/date/timezone scoped. Mutations between "
+            "pages can change results; refetch from page one after mutation success. "
+            "No snapshot pagination guarantee. Insight-only modeled failures preserve "
+            "items and summary. Responses are current-only and never cached."
+        ),
+    )
+    def selected_date(
+        request: Request,
+        response: Response,
+        query: Annotated[PlanSelectedDateQuery, Query()],
+        state: Annotated[OnboardingState, Depends(gate)],
+    ) -> PlanSelectedDateResponse:
+        no_store(response)
+        return PlanSelectedDateResponse.model_validate(
+            PlanSelectedDateService(service()).get(
+                state.user_account_id,
+                query.selected_date,
+                query.timezone,
+                get_request_id(request),
+                query.limit,
+                query.cursor,
             )
         )
 

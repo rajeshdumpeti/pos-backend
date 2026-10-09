@@ -202,6 +202,7 @@ def create_app(
                 AUTHENTICATION_CONTRACT_VERSION
             )
             schema["x-pos-today-contract-version"] = "1.0"
+            schema["x-pos-plan-contract-version"] = "1.0"
             application.openapi_schema = schema
         return application.openapi_schema
 

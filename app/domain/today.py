@@ -8,6 +8,7 @@ from uuid import UUID
 
 from app.domain.onboarding import PriorityLifeArea, GOAL_FIELDS
 from app.domain.planning import PlanItem, timezone_info, utc
+from app.domain.plan_selection import recommendation_key as shared_recommendation_key
 
 
 class SectionState(StrEnum):
@@ -267,14 +268,7 @@ def aggregate(
     )
 
     def recommendation_key(item: PlanItem):
-        start = item.intent.scheduled_start_at
-        priority = item.intent.is_priority
-        tier = (
-            (0 if priority else 1)
-            if start is not None and start <= now
-            else (2 if priority else 3) if start is not None else (4 if priority else 5)
-        )
-        return tier, start or item.created_at, str(item.id)
+        return shared_recommendation_key(item, now)
 
     selected = min(active, key=recommendation_key) if active else None
     if selected:

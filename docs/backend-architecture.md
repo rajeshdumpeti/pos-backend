@@ -99,3 +99,11 @@ See [`password-recovery-and-email-delivery.md`](password-recovery-and-email-deli
 Milestone 2.B adds the domain-owned planning vertical slice and read-only Today
 projection through the same ports and Unit-of-Work direction. See
 [today-dashboard.md](today-dashboard.md).
+
+## Plan v1 selected-date projection
+
+[Plan v1](plan-v1.md) adds a thin selected-date route and application read service
+over the existing planning repository/UoW. Pure shared selectors preserve frozen
+Today behavior while Plan classifies ongoing intervals explicitly. Full-date facts
+are materialized once; summary/insight are independent of bounded cursor pages.
+No new persistence model or migration is introduced.
