@@ -154,3 +154,11 @@ Milestone 2.C selected-date [Plan v1](plan-v1.md) makes no schema change. The
 existing account/date/start index supports its equality-filtered full-date facts;
 global sorting is application-owned. Head and model metadata remain unchanged at
 0006_daily_planning, with existing offline parity and guarded live parity checks.
+
+## Milestone 16 background-job foundation
+
+Revision `0007_background_jobs` follows `0006_daily_planning` and adds the
+account-scoped/system-scoped job table, unique deduplication digest, lifecycle
+constraints and bounded claim/recovery/cleanup indexes. It does not seed jobs or
+change existing domain tables. See [background-jobs.md](background-jobs.md) for
+execution, lease fencing, replay limits, cleanup and guarded live verification.

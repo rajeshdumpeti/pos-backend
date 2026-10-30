@@ -107,3 +107,11 @@ over the existing planning repository/UoW. Pure shared selectors preserve frozen
 Today behavior while Plan classifies ongoing intervals explicitly. Full-date facts
 are materialized once; summary/insight are independent of bounded cursor pages.
 No new persistence model or migration is introduced.
+
+## Background jobs
+
+[Milestone 16](background-jobs.md) adds framework-independent job intent and
+application ports, PostgreSQL persistence and a deliberate bounded worker CLI.
+It is not composed into API startup and introduces no public job administration
+or creation endpoints. Domain producers, Notification Inbox and push delivery
+remain separate capabilities.
