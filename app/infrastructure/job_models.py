@@ -22,7 +22,8 @@ class BackgroundJobModel(RelationalBase):
     __table_args__ = (
         UniqueConstraint("deduplication_digest"),
         CheckConstraint(
-            "job_type = 'maintenance.jobs.cleanup'", info={"purpose": "supported_type"}
+            "job_type IN ('maintenance.jobs.cleanup','plan.item_starting_soon','today.items_remaining','maintenance.notifications.cleanup')",
+            info={"purpose": "supported_type"},
         ),
         CheckConstraint(
             "state IN ('pending','running','succeeded','retryable','dead','cancelled','superseded')",
@@ -71,6 +72,12 @@ class BackgroundJobModel(RelationalBase):
             postgresql_where=text(
                 "state IN ('succeeded','dead','cancelled','superseded')"
             ),
+        ),
+        Index(
+            "ix_background_jobs__producer_scope",
+            "user_account_id",
+            "job_type",
+            postgresql_where=text("state IN ('pending','retryable')"),
         ),
     )
     id: Mapped[UUID] = mapped_column(PG_UUID(as_uuid=True), primary_key=True)

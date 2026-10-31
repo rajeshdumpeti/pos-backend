@@ -14,7 +14,7 @@ from app.application.jobs import Claim
 from app.application.persistence import PersistenceUnavailableError
 from app.domain.jobs import (
     CATEGORIES,
-    JOB_TYPE,
+    JOB_TYPES,
     STATES,
     TERMINAL,
     Job,
@@ -260,7 +260,7 @@ class SafeJobDiagnostic:
             not isinstance(job.id, UUID)
             or type(job.attempts) is not int
             or not 0 <= job.attempts <= 5
-            or job.job_type != JOB_TYPE
+            or job.job_type not in JOB_TYPES
             or job.state not in STATES
             or job.failure_category not in CATEGORIES | {None}
         ):

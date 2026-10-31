@@ -121,7 +121,7 @@ def test_domain_and_application_contracts_are_framework_independent():
 
 
 def test_metadata_has_expected_constraints_indexes_and_no_raw_secret_columns():
-    assert len(RELATIONAL_METADATA.tables) == 14
+    assert len(RELATIONAL_METADATA.tables) == 16
     assert UserAccountModel.__table__.c.id.type.__class__.__name__ == "UUID"
     forbidden = {
         "password",

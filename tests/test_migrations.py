@@ -88,6 +88,8 @@ def test_declarative_base_uses_canonical_authentication_metadata():
         "plan_items",
         "plan_creation_receipts",
         "background_jobs",
+        "account_timezones",
+        "notifications",
     }
 
 
@@ -146,7 +148,7 @@ def test_alembic_configuration_and_single_baseline_head_load():
     script = ScriptDirectory.from_config(config)
 
     assert Path(script.dir).resolve() == (ROOT / "migrations").resolve()
-    assert script.get_heads() == ["0007_background_jobs"]
+    assert script.get_heads() == ["0008_notification_inbox"]
     revision = script.get_revision("0001_migration_foundation")
     assert revision is not None
     assert revision.down_revision is None

@@ -153,7 +153,7 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
         operation
         for path_item in schema["paths"].values()
         for method, operation in path_item.items()
-        if method in {"get", "post", "patch", "delete"}
+        if method in {"get", "post", "put", "patch", "delete"}
     ]
     operation_ids = [operation["operationId"] for operation in operations]
 
@@ -185,6 +185,11 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
         "complete_plan_item",
         "get_today_dashboard",
         "get_plan_selected_date",
+        "put_account_timezone",
+        "list_notification_inbox",
+        "get_notification_unread_count",
+        "mark_all_notifications_read",
+        "mark_notification_read",
     ]
     assert len(operation_ids) == len(set(operation_ids))
     assert schema["paths"]["/health"]["get"]["tags"] == ["Health"]

@@ -62,6 +62,17 @@ class PlanUnitOfWork(Protocol):
     def rollback(self) -> None: ...
 
 
+class PlanMutationIntegration(Protocol):
+    def prepare(self, unit: PlanUnitOfWork, owner: UUID) -> None: ...
+    def changed(
+        self,
+        unit: PlanUnitOfWork,
+        previous: PlanItem | None,
+        item: PlanItem,
+        now: datetime,
+    ) -> None: ...
+
+
 class PlanDiagnostic(Protocol):
     def emit(
         self,
@@ -79,11 +90,13 @@ class PlanService:
         factory: Callable[[str], PlanUnitOfWork],
         *,
         clock: Callable[[], datetime] | None = None,
-        diagnostic: PlanDiagnostic | None = None
+        diagnostic: PlanDiagnostic | None = None,
+        integration: PlanMutationIntegration | None = None
     ) -> None:
         self.factory = factory
         self.clock = clock or (lambda: datetime.now(UTC))
         self.diagnostic = diagnostic
+        self.integration = integration
 
     def _emit(self, operation: str, request_id: str, item: PlanItem) -> None:
         if self.diagnostic:
@@ -108,6 +121,8 @@ class PlanService:
             ).encode()
         ).hexdigest()
         with self.factory(request_id) as unit:
+            if self.integration:
+                self.integration.prepare(unit, account_id)
             receipt = unit.plans.receipt(account_id, "plan_item.create", key)
             if receipt:
                 if receipt.request_hash != digest:
@@ -119,6 +134,8 @@ class PlanService:
             unit.plans.save_receipt(
                 account_id, "plan_item.create", key, CreationReceipt(digest, item)
             )
+            if self.integration:
+                self.integration.changed(unit, None, item, now)
             unit.commit()
             self._emit("plan_item_create", request_id, item)
             return item
@@ -148,6 +165,8 @@ class PlanService:
         if not changes or not set(changes) <= allowed:
             raise PlanValidationError("Invalid update")
         with self.factory(request_id) as unit:
+            if self.integration:
+                self.integration.prepare(unit, account_id)
             current = self._get(unit, account_id, item_id, lock=True)
             if current.version != expected_version or current.completed_at is not None:
                 raise PlanConflictError("Plan item version conflicts")
@@ -172,6 +191,8 @@ class PlanService:
             )
             if not unit.plans.update(item, current.version):
                 raise PlanConflictError("Plan item version conflicts")
+            if self.integration:
+                self.integration.changed(unit, current, item, item.updated_at)
             unit.commit()
             self._emit("plan_item_update", request_id, item)
             return item
@@ -180,6 +201,8 @@ class PlanService:
         self, account_id: UUID, item_id: UUID, expected_version: int, request_id: str
     ) -> PlanItem:
         with self.factory(request_id) as unit:
+            if self.integration:
+                self.integration.prepare(unit, account_id)
             current = self._get(unit, account_id, item_id, lock=True)
             if current.completed_at is not None:
                 return current
@@ -195,6 +218,8 @@ class PlanService:
             )
             if not unit.plans.update(item, current.version):
                 raise PlanConflictError("Plan item version conflicts")
+            if self.integration:
+                self.integration.changed(unit, current, item, now)
             unit.commit()
             self._emit("plan_item_complete", request_id, item)
             return item
