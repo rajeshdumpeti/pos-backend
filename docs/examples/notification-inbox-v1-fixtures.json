@@ -1,0 +1,396 @@
+{
+  "empty": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 0,
+    "items": [],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "today": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "today",
+    "unread_count": 1,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000002",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 1 item remaining today.",
+        "created_at": "2026-10-30T18:00:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "earlier": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "today",
+    "unread_count": 1,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000003",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 2 items remaining today.",
+        "created_at": "2026-10-29T18:00:00Z",
+        "group": "earlier",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-29",
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "mixed": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 3,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000001",
+        "source": "plan",
+        "category": "reminder",
+        "event_type": "plan.item_starting_soon",
+        "title": "Starting soon",
+        "message": "\"Synthetic plan item\" starts in 15 minutes.",
+        "created_at": "2026-10-30T21:45:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "America/New_York",
+        "navigation": {
+          "state": "available",
+          "action": "plan_item.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000002",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 1 item remaining today.",
+        "created_at": "2026-10-30T18:00:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": null
+        }
+      },
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000003",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 2 items remaining today.",
+        "created_at": "2026-10-29T18:00:00Z",
+        "group": "earlier",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-29",
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "plan_filter": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "plan",
+    "unread_count": 1,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000001",
+        "source": "plan",
+        "category": "reminder",
+        "event_type": "plan.item_starting_soon",
+        "title": "Starting soon",
+        "message": "\"Synthetic plan item\" starts in 15 minutes.",
+        "created_at": "2026-10-30T21:45:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "America/New_York",
+        "navigation": {
+          "state": "available",
+          "action": "plan_item.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": "10000000-0000-4000-8000-000000000001"
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "unread": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 2,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000001",
+        "source": "plan",
+        "category": "reminder",
+        "event_type": "plan.item_starting_soon",
+        "title": "Starting soon",
+        "message": "\"Synthetic plan item\" starts in 15 minutes.",
+        "created_at": "2026-10-30T21:45:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "America/New_York",
+        "navigation": {
+          "state": "available",
+          "action": "plan_item.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000002",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 1 item remaining today.",
+        "created_at": "2026-10-30T18:00:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "all_read": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 0,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000001",
+        "source": "plan",
+        "category": "reminder",
+        "event_type": "plan.item_starting_soon",
+        "title": "Starting soon",
+        "message": "\"Synthetic plan item\" starts in 15 minutes.",
+        "created_at": "2026-10-30T21:45:00Z",
+        "group": "today",
+        "is_read": true,
+        "read_at": "2026-10-30T22:00:00Z",
+        "source_timezone": "America/New_York",
+        "navigation": {
+          "state": "available",
+          "action": "plan_item.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": "10000000-0000-4000-8000-000000000001"
+        }
+      },
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000002",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 1 item remaining today.",
+        "created_at": "2026-10-30T18:00:00Z",
+        "group": "today",
+        "is_read": true,
+        "read_at": "2026-10-30T22:00:00Z",
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": null
+        }
+      },
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000003",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 2 items remaining today.",
+        "created_at": "2026-10-29T18:00:00Z",
+        "group": "earlier",
+        "is_read": true,
+        "read_at": "2026-10-30T22:00:00Z",
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-29",
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "unavailable": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 1,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000001",
+        "source": "plan",
+        "category": "reminder",
+        "event_type": "plan.item_starting_soon",
+        "title": "Starting soon",
+        "message": "\"Synthetic plan item\" starts in 15 minutes.",
+        "created_at": "2026-10-30T21:45:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "America/New_York",
+        "navigation": {
+          "state": "unavailable",
+          "action": null,
+          "selected_date": null,
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  },
+  "paginated_first": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 3,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000001",
+        "source": "plan",
+        "category": "reminder",
+        "event_type": "plan.item_starting_soon",
+        "title": "Starting soon",
+        "message": "\"Synthetic plan item\" starts in 15 minutes.",
+        "created_at": "2026-10-30T21:45:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "America/New_York",
+        "navigation": {
+          "state": "available",
+          "action": "plan_item.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": "10000000-0000-4000-8000-000000000001"
+        }
+      }
+    ],
+    "next_cursor": "WyJjNmI1ZDA0ZjUzYWY1ODFjYzExNDdkOTY2MjZmODBiMWU1NWVjM2U2ZjE3NjQ1OWZhMDY5NGNlZjg0NDI0MGFhIiwiMjAyNi0xMC0zMFQyMTo0NTowMCswMDowMCIsIjIwMDAwMDAwLTAwMDAtNDAwMC04MDAwLTAwMDAwMDAwMDAwMSJd",
+    "has_more": true
+  },
+  "paginated_second": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-30T22:00:00Z",
+    "timezone": "UTC",
+    "filter": "all",
+    "unread_count": 3,
+    "items": [
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000002",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 1 item remaining today.",
+        "created_at": "2026-10-30T18:00:00Z",
+        "group": "today",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-30",
+          "plan_item_id": null
+        }
+      },
+      {
+        "notification_id": "20000000-0000-4000-8000-000000000003",
+        "source": "today",
+        "category": "attention",
+        "event_type": "today.items_remaining",
+        "title": "Today’s plan",
+        "message": "You have 2 items remaining today.",
+        "created_at": "2026-10-29T18:00:00Z",
+        "group": "earlier",
+        "is_read": false,
+        "read_at": null,
+        "source_timezone": "UTC",
+        "navigation": {
+          "state": "available",
+          "action": "today.view",
+          "selected_date": "2026-10-29",
+          "plan_item_id": null
+        }
+      }
+    ],
+    "next_cursor": null,
+    "has_more": false
+  }
+}

@@ -222,10 +222,32 @@ def test_migration_and_model_metadata_match_without_database():
             )
 
         def create_index(self, name, table, columns, **kwargs):
-            indexes.append((name, columns, str(kwargs["postgresql_where"])))
+            if table == "background_jobs":
+                indexes.append((name, columns, str(kwargs["postgresql_where"])))
 
-    module.op = Recorder()
+        def f(self, name):
+            return name
+
+        def drop_constraint(self, name, table, **kwargs):
+            target = next(t for t in created if t.name == table)
+            target.constraints.remove(
+                next(c for c in target.constraints if c.name == name)
+            )
+
+        def create_check_constraint(self, name, table, condition):
+            target = next(t for t in created if t.name == table)
+            target.append_constraint(CheckConstraint(condition, name=name))
+
+    recorder = Recorder()
+    module.op = recorder
     module.upgrade()
+    extension_spec = importlib.util.spec_from_file_location(
+        "inbox_extension", Path("migrations/versions/0008_notification_inbox.py")
+    )
+    extension = importlib.util.module_from_spec(extension_spec)
+    extension_spec.loader.exec_module(extension)
+    extension.op = recorder
+    extension.upgrade()
     table = created[0]
     expected = BackgroundJobModel.__table__
     assert [(c.name, str(c.type), c.nullable) for c in table.columns] == [

@@ -35,6 +35,9 @@ from app.infrastructure.onboarding import compose_onboarding
 from app.application.planning import PlanService
 from app.infrastructure.planning import compose_planning
 from app.api.routes.planning import create_planning_router
+from app.application.notifications import NotificationService
+from app.infrastructure.notifications import compose_notifications
+from app.api.routes.notifications import create_notification_router
 
 
 AUTHENTICATION_CONTRACT_VERSION = "1.1.0"
@@ -48,6 +51,7 @@ def create_app(
     password_recovery_service: PasswordRecoveryService | None = None,
     onboarding_service: OnboardingService | None = None,
     plan_service: PlanService | None = None,
+    notification_service: NotificationService | None = None,
 ) -> FastAPI:
     """Compose one isolated FastAPI application from concrete local dependencies."""
     resolved_settings = app_settings if app_settings is not None else load_settings()
@@ -191,6 +195,14 @@ def create_app(
         create_planning_router(plan_service, onboarding_service, email_session_service)
     )
 
+    if notification_service is None and onboarding_composition is not None:
+        notification_service = compose_notifications(onboarding_composition.engine)
+    application.include_router(
+        create_notification_router(
+            notification_service, onboarding_service, email_session_service
+        )
+    )
+
     def authentication_contract_openapi() -> dict[str, object]:
         if application.openapi_schema is None:
             schema = get_openapi(
@@ -203,6 +215,7 @@ def create_app(
             )
             schema["x-pos-today-contract-version"] = "1.0"
             schema["x-pos-plan-contract-version"] = "1.0"
+            schema["x-pos-inbox-contract-version"] = "1.0"
             application.openapi_schema = schema
         return application.openapi_schema
 

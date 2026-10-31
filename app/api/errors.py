@@ -9,6 +9,12 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.schemas import ErrorDetail, ErrorResponse
+from app.domain.notifications import (
+    InboxError,
+    InboxValidationError,
+    InboxNotFoundError,
+    InboxUnavailableError,
+)
 from app.domain.planning import (
     PlanError,
     PlanValidationError,
@@ -134,9 +140,27 @@ def register_exception_handlers(application: FastAPI) -> None:
     )
     application.add_exception_handler(OnboardingError, _handle_onboarding_error)
     application.add_exception_handler(PlanError, _handle_plan_error)
+    application.add_exception_handler(InboxError, _handle_inbox_error)
     application.add_exception_handler(RequestValidationError, _handle_validation_error)
     application.add_exception_handler(StarletteHTTPException, _handle_http_error)
     application.add_exception_handler(Exception, _handle_unexpected_error)
+
+
+async def _handle_inbox_error(request: Request, error: InboxError) -> JSONResponse:
+    code, name, message = (
+        (422, "request_validation_failed", "The request could not be validated")
+        if isinstance(error, InboxValidationError)
+        else (
+            (404, "notification_unavailable", "Notification is unavailable")
+            if isinstance(error, InboxNotFoundError)
+            else (
+                (503, "dependency_unavailable", "A required dependency is unavailable")
+                if isinstance(error, InboxUnavailableError)
+                else (500, "internal_server_error", "An unexpected error occurred")
+            )
+        )
+    )
+    return _error_response(request, code, name, message)
 
 
 async def _handle_plan_error(request: Request, error: PlanError) -> JSONResponse:
@@ -254,7 +278,13 @@ async def _handle_validation_error(
     details = (
         []
         if request.url.path.startswith(
-            ("/api/v1/auth", "/api/v1/plan", "/api/v1/today")
+            (
+                "/api/v1/auth",
+                "/api/v1/plan",
+                "/api/v1/today",
+                "/api/v1/notifications",
+                "/api/v1/account",
+            )
         )
         else [_validation_detail(error_detail) for error_detail in error.errors()]
     )
@@ -519,7 +549,13 @@ def _error_response(
     request_id = get_request_id(request)
     headers = dict(extra_headers or {})
     if request.url.path.startswith(
-        ("/api/v1/onboarding", "/api/v1/plan", "/api/v1/today")
+        (
+            "/api/v1/onboarding",
+            "/api/v1/plan",
+            "/api/v1/today",
+            "/api/v1/notifications",
+            "/api/v1/account",
+        )
     ):
         headers["Cache-Control"] = "no-store"
         headers["Pragma"] = "no-cache"

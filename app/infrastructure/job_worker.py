@@ -28,8 +28,20 @@ def process_pending(limit: int = 10) -> int:
             return SqlAlchemyJobUnitOfWork(sessions)
 
         service = JobService(factory)
+        from app.application.notifications import NotificationService
+        from app.domain.notifications import PLAN_EVENT, TODAY_EVENT, CLEANUP_TYPE
+        from app.infrastructure.notifications import SqlAlchemyInboxUnitOfWork
+
+        notifications = NotificationService(lambda: SqlAlchemyInboxUnitOfWork(sessions))
         worker = JobWorker(
-            factory, {JOB_TYPE: service.cleanup}, diagnostic=SafeJobDiagnostic()
+            factory,
+            {
+                JOB_TYPE: service.cleanup,
+                PLAN_EVENT: notifications.plan_reminder,
+                TODAY_EVENT: notifications.today_reminder,
+                CLEANUP_TYPE: notifications.cleanup,
+            },
+            diagnostic=SafeJobDiagnostic(),
         )
         summary = worker.process_pending(limit)
         print(" ".join(f"{key}={value}" for key, value in asdict(summary).items()))

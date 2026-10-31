@@ -220,6 +220,18 @@ class SqlAlchemyPlanUnitOfWork(SqlAlchemyOnboardingUnitOfWork):
     def plans(self) -> SqlAlchemyPlanRepository:
         return SqlAlchemyPlanRepository(self._require())
 
+    @property
+    def jobs(self):
+        from app.infrastructure.jobs import SqlAlchemyJobRepository
+
+        return SqlAlchemyJobRepository(self._require())
+
+    @property
+    def inbox(self):
+        from app.infrastructure.notifications import SqlAlchemyInboxRepository
+
+        return SqlAlchemyInboxRepository(self._require())
+
     def _raise(self, operation: str, error: SQLAlchemyError) -> Never:
         log_database_failure(
             LOGGER,
@@ -265,10 +277,6 @@ class SafePlanDiagnostic:
                         else "succeeded"
                     ),
                     "request_id": request_id if len(request_id) <= 64 else "redacted",
-                    "account_id": (
-                        str(account_id) if isinstance(account_id, UUID) else "redacted"
-                    ),
-                    "plan_item_id": str(item_id) if isinstance(item_id, UUID) else None,
                     "version": max(0, version),
                 },
             )
@@ -277,10 +285,12 @@ class SafePlanDiagnostic:
 
 
 def compose_planning(engine) -> PlanService:
+    from app.application.notifications import PlanNotificationIntegration
     from app.infrastructure.database import create_session_factory
 
     factory: SessionFactory = create_session_factory(engine)
     return PlanService(
         lambda request_id: SqlAlchemyPlanUnitOfWork(factory, request_id=request_id),
         diagnostic=SafePlanDiagnostic(),
+        integration=PlanNotificationIntegration(),
     )

@@ -162,3 +162,12 @@ account-scoped/system-scoped job table, unique deduplication digest, lifecycle
 constraints and bounded claim/recovery/cleanup indexes. It does not seed jobs or
 change existing domain tables. See [background-jobs.md](background-jobs.md) for
 execution, lease fencing, replay limits, cleanup and guarded live verification.
+
+## Milestone 17A Notification Inbox
+
+Revision `0008_notification_inbox` follows `0007_background_jobs`, adding only
+account timezone/Inbox persistence and the approved producer job allow-list and
+cancellation index. It adds no fabricated backfill. Downgrade deletes feature job
+intents before restoring the previous job allow-list and removing the feature
+tables; review that destructive rollback before any authorized live execution.
+See [notification-inbox.md](notification-inbox.md) and its guarded parity tests.

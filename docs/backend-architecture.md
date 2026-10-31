@@ -115,3 +115,12 @@ application ports, PostgreSQL persistence and a deliberate bounded worker CLI.
 It is not composed into API startup and introduces no public job administration
 or creation endpoints. Domain producers, Notification Inbox and push delivery
 remain separate capabilities.
+
+## Notification Inbox and account timezone
+
+[Milestone 17A](notification-inbox.md) adds account-owned immutable Inbox snapshots,
+a separate authoritative account-timezone preference, shared-transaction Plan
+producer integration, and explicit Milestone 16 job handlers. Reads, source
+revalidation and lifecycle scheduling use account ownership and Unit-of-Work
+boundaries; Inbox is independent of OS permission and push delivery. Startup
+composes services/routes only and never runs a worker or inserts notifications.

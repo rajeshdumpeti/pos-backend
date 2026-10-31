@@ -8,6 +8,14 @@ import re
 from uuid import UUID, uuid4
 
 JOB_TYPE = "maintenance.jobs.cleanup"
+JOB_TYPES = frozenset(
+    {
+        JOB_TYPE,
+        "plan.item_starting_soon",
+        "today.items_remaining",
+        "maintenance.notifications.cleanup",
+    }
+)
 STATES = frozenset(
     {"pending", "running", "succeeded", "retryable", "dead", "cancelled", "superseded"}
 )
@@ -62,6 +70,10 @@ def bounded(value: int, maximum: int = 100) -> int:
 
 
 def payload_for(job_type: str, payload: dict) -> dict:
+    if isinstance(job_type, str) and job_type in JOB_TYPES - {JOB_TYPE}:
+        from app.domain.notification_jobs import notification_payload
+
+        return notification_payload(job_type, payload)
     if (
         job_type != JOB_TYPE
         or not isinstance(payload, dict)
@@ -120,7 +132,10 @@ def new_job(
         raise JobValidationError()
     scheduled_at, now = utc(scheduled_at), utc(now)
     payload = payload_for(job_type, payload)
-    if datetime.fromisoformat(payload["cutoff_at"]) > scheduled_at:
+    if (
+        job_type == JOB_TYPE
+        and datetime.fromisoformat(payload["cutoff_at"]) > scheduled_at
+    ):
         raise JobValidationError()
     bounded(max_attempts, 5)
     intent = json.dumps(
