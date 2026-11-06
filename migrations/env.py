@@ -6,7 +6,7 @@ from alembic import context
 from sqlalchemy.exc import SQLAlchemyError
 
 from app.application import PersistenceUnavailableError
-from app.config import load_settings
+from app.config import load_database_settings
 from app.infrastructure.database import (
     create_database_engine,
     dispose_database_engine,
@@ -44,9 +44,9 @@ def run_migrations_offline() -> None:
 
 def run_migrations_online() -> None:
     """Run migrations through the existing secret-safe engine boundary."""
-    settings = load_settings()
+    settings = load_database_settings()
     database_url = require_database_url(settings)
-    engine = create_database_engine(database_url)
+    engine = create_database_engine(database_url, settings=settings)
 
     try:
         with engine.connect() as connection:

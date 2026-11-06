@@ -176,7 +176,7 @@ def test_maintenance_scheduling_uses_only_approved_job_and_sanitized_summary(
         notification_operations, "load_settings", lambda: Mock(database_url=object())
     )
     monkeypatch.setattr(
-        notification_operations, "create_database_engine", lambda _: engine
+        notification_operations, "create_database_engine", lambda _, **_kwargs: engine
     )
     monkeypatch.setattr(
         notification_operations, "create_session_factory", lambda _: Mock()

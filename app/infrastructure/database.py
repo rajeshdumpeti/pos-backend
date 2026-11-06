@@ -9,6 +9,8 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.exc import ArgumentError, SQLAlchemyError
 from sqlalchemy.orm import Session, sessionmaker
 
+from app.config import DatabaseSettings
+
 from app.application import (
     PersistenceConfigurationError,
     PersistenceUnavailableError,
@@ -21,8 +23,18 @@ SessionFactory = Callable[[], Session]
 RepositoryFactory = Callable[[Session], ResourceRepository]
 
 
-def create_database_engine(database_url: SecretStr) -> Engine:
+def create_database_engine(
+    database_url: SecretStr, *, settings: DatabaseSettings | None = None
+) -> Engine:
     """Build a synchronous PostgreSQL engine without opening a connection."""
+    options = settings or DatabaseSettings(app_env="local")
+    if settings is not None and settings.database_url != database_url:
+        raise PersistenceConfigurationError("Database configuration does not match engine URL")
+    connect_args: dict[str, object] = {"connect_timeout": options.database_connect_timeout}
+    if options.database_sslmode is not None:
+        connect_args["sslmode"] = options.database_sslmode
+    if options.database_sslrootcert is not None:
+        connect_args["sslrootcert"] = options.database_sslrootcert
     try:
         url = make_url(database_url.get_secret_value())
     except ArgumentError as error:
@@ -44,6 +56,10 @@ def create_database_engine(database_url: SecretStr) -> Engine:
             url,
             hide_parameters=True,
             pool_pre_ping=True,
+            pool_size=options.database_pool_size,
+            max_overflow=options.database_max_overflow,
+            pool_timeout=options.database_pool_timeout,
+            connect_args=connect_args,
         )
     except (ArgumentError, SQLAlchemyError) as error:
         raise_safe_database_error(

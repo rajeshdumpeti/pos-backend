@@ -42,7 +42,7 @@ def compose_email_sessions(
         or settings.auth_refresh_receipt_encryption_key is None
     ):
         return None
-    engine = shared_engine or create_database_engine(settings.database_url)
+    engine = shared_engine or create_database_engine(settings.database_url, settings=settings)
     session_factory = create_session_factory(engine)
     hasher = Argon2idPasswordHasher(
         time_cost=settings.argon2_time_cost,

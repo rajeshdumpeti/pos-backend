@@ -310,7 +310,7 @@ def compose_onboarding(
 ) -> OnboardingComposition | None:
     if settings.database_url is None:
         return None
-    engine = shared_engine or create_database_engine(settings.database_url)
+    engine = shared_engine or create_database_engine(settings.database_url, settings=settings)
     factory = create_session_factory(engine)
     return OnboardingComposition(
         OnboardingService(

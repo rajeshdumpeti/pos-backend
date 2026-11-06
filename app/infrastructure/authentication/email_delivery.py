@@ -180,7 +180,7 @@ def process_pending(limit: int) -> int:
         ):
             print("Authentication email delivery configuration is incomplete")
             return 2
-        engine = create_database_engine(settings.database_url)
+        engine = create_database_engine(settings.database_url, settings=settings)
         session_factory = create_session_factory(engine)
         cipher = AesGcmOutboxCipher(
             decode_authentication_key(
