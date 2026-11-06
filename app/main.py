@@ -1,75 +1,254 @@
-from copy import deepcopy
-from typing import Any
-from fastapi import FastAPI, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+"""FastAPI application composition and ASGI entry point."""
 
-from app.config import settings
+from fastapi import FastAPI
+from fastapi.openapi.utils import get_openapi
 
-app = FastAPI(title="POS Local Mock API", version="0.1.0")
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=list(settings.cors_origins),
-    allow_methods=["*"],
-    allow_headers=["*"],
+from app.api import create_api_router, register_exception_handlers
+from app.application import MockResourceService, ResourceUnitOfWorkFactory
+from app.application.email_registration import (
+    EmailRegistrationService,
+    LegalPolicyStatus,
+    RegistrationPolicyResult,
 )
+from app.application.session_lifecycle import EmailSessionService
+from app.application.password_recovery import PasswordRecoveryService
+from app.config import AuthenticationLegalConsentMode, Settings, load_settings
+from app.core.authentication_security import AuthenticationSecurityMiddleware
+from app.infrastructure.authentication.abuse_control import compose_admission
+from app.infrastructure.authentication.registration import SafeAuthenticationEventLogger
+from app.core import configure_cors, configure_request_ids
+from app.infrastructure import (
+    InMemoryResourceStore,
+    InMemoryResourceUnitOfWorkFactory,
+)
+from app.infrastructure.authentication.composition import compose_email_registration
+from app.infrastructure.authentication.registration import (
+    SafeAuthenticationAvailabilityDiagnostic,
+)
+from app.infrastructure.authentication.session_composition import compose_email_sessions
+from app.infrastructure.authentication.password_recovery_composition import (
+    compose_password_recovery,
+)
+from app.infrastructure.database import dispose_database_engine
+from app.application.onboarding import OnboardingService
+from app.infrastructure.onboarding import compose_onboarding
+from app.application.planning import PlanService
+from app.infrastructure.planning import compose_planning
+from app.api.routes.planning import create_planning_router
+from app.application.notifications import NotificationService
+from app.infrastructure.notifications import compose_notifications
+from app.api.routes.notifications import create_notification_router
 
-class Item(BaseModel):
-    id: str
-    title: str
-    meta: str = ""
-    done: bool = False
 
-SEED: dict[str, Any] = {
-    "dashboard": {"name": "Rajesh", "date": "Saturday, July 25", "next_best_action": "Finish breakfast, then head to the office.", "routine_progress": 0.33, "calories": 1040, "protein": 76, "water_liters": 1.2, "weight_lb": 171.2, "spent_today": 51},
-    "timeline": [{"id": f"r{i}", "title": title, "meta": time, "done": i < 4} for i, (title, time) in enumerate([("Warm water","7:00 AM"),("Brush","7:10 AM"),("Shower","7:25 AM"),("Breakfast","8:00 AM"),("Office","9:00 AM"),("Lunch","12:30 PM"),("Gym","6:00 PM"),("Dinner","8:00 PM"),("Sleep","10:45 PM")], 1)],
-    "routines": {"morning": ["Warm water", "Brush", "Shower", "Breakfast"], "afternoon": ["Lunch"], "evening": ["Gym", "Dinner", "Sleep"]},
-    "nutrition": {"calories": 1040, "calorie_target": 2200, "protein": 76, "protein_target": 150, "water": 1.2, "water_target": 3.0, "meals": ["Greek yogurt, berries & oats", "Chicken rice bowl"]},
-    "weight": {"current_lb": 171.2, "weekly_change_lb": -0.8, "goal_lb": 165.0, "history": [172.0,171.8,171.9,171.5,171.6,171.3,171.2]},
-    "workouts": {"title": "Chest and Triceps", "exercises": ["Bench Press","Incline Dumbbell Press","Cable Fly","Triceps Pushdown","Walking"]},
-    "money": {"spent_today": 51, "monthly_budget": 1500, "remaining": 1102, "notice": "Based on manually logged transactions.", "transactions": [{"title":"Lunch","amount":-14},{"title":"Coffee","amount":-5},{"title":"Groceries","amount":-32}]},
-    "tasks": [{"id": f"t{i}", "title": title, "meta": "Today", "done": False} for i, title in enumerate(["Finish React feature","Grocery shopping","Gym","Read 20 minutes","Plan tomorrow"], 1)],
-    "focus": {"active": False, "remaining_seconds": 1500, "today_minutes": 52},
-    "reports": {"routine_completion": .82, "average_calories": 2080, "average_protein": 132, "average_water": 2.6, "workouts_completed": 4, "spending": 348, "tasks_completed": 23, "focus_minutes": 258},
-    "notifications": [{"id":"n1","title":"Lunch is coming up","meta":"Your plan says 12:30 PM","done":False}],
-    "profile": {"name":"Rajesh","joined":"January 2026","priorities":["Health","Focus","Finances"]},
-    "settings": {"units":"imperial","currency":"USD","week_start":"Monday","theme":"system","notifications":True},
-}
-store = deepcopy(SEED)
+AUTHENTICATION_CONTRACT_VERSION = "1.1.0"
 
-@app.get("/health")
-def health(): return {"status": "ok"}
 
-@app.get("/{resource}")
-def get_resource(resource: str):
-    if resource == "search": return []
-    if resource not in store: raise HTTPException(404, "Unknown resource")
-    return store[resource]
+def create_app(
+    app_settings: Settings | None = None,
+    resource_unit_of_work_factory: ResourceUnitOfWorkFactory | None = None,
+    email_registration_service: EmailRegistrationService | None = None,
+    email_session_service: EmailSessionService | None = None,
+    password_recovery_service: PasswordRecoveryService | None = None,
+    onboarding_service: OnboardingService | None = None,
+    plan_service: PlanService | None = None,
+    notification_service: NotificationService | None = None,
+) -> FastAPI:
+    """Compose one isolated FastAPI application from concrete local dependencies."""
+    resolved_settings = app_settings if app_settings is not None else load_settings()
+    application = FastAPI(title="POS Local Mock API", version="0.1.0")
 
-@app.post("/{resource}")
-def add_item(resource: str, item: Item):
-    if resource not in store or not isinstance(store[resource], list): raise HTTPException(400, "Resource does not accept items")
-    store[resource].insert(0, item.model_dump())
-    return item
+    admission, close_admission = compose_admission(resolved_settings)
+    application.add_event_handler("shutdown", close_admission)
+    application.add_middleware(
+        AuthenticationSecurityMiddleware,
+        admission=admission,
+        settings=resolved_settings,
+        diagnostic=SafeAuthenticationEventLogger(),
+    )
+    configure_cors(application, resolved_settings)
+    configure_request_ids(application)
+    register_exception_handlers(application)
 
-@app.patch("/{resource}/{item_id}")
-def update_item(resource: str, item_id: str, patch: dict[str, Any]):
-    items = store.get(resource)
-    if not isinstance(items, list): raise HTTPException(400, "Resource is not a list")
-    for item in items:
-        if item.get("id") == item_id:
-            item.update(patch)
-            return item
-    raise HTTPException(404, "Item not found")
+    if resource_unit_of_work_factory is None:
+        resource_store = InMemoryResourceStore()
+        resource_unit_of_work_factory = InMemoryResourceUnitOfWorkFactory(
+            resource_store
+        )
 
-@app.delete("/{resource}/{item_id}", status_code=204)
-def delete_item(resource: str, item_id: str):
-    items = store.get(resource)
-    if not isinstance(items, list): raise HTTPException(400, "Resource is not a list")
-    store[resource] = [item for item in items if item.get("id") != item_id]
+    resource_service = MockResourceService(resource_unit_of_work_factory)
+    authentication_availability_diagnostic = SafeAuthenticationAvailabilityDiagnostic()
+    authentication_composition = None
+    session_composition = None
+    password_recovery_composition = None
+    onboarding_composition = None
+    if email_registration_service is None:
+        authentication_composition = compose_email_registration(resolved_settings)
+        if authentication_composition is not None:
+            email_registration_service = authentication_composition.service
+    if email_session_service is None:
+        session_composition = compose_email_sessions(
+            resolved_settings,
+            shared_engine=(
+                None
+                if authentication_composition is None
+                else authentication_composition.engine
+            ),
+            verification_continuation=email_registration_service,
+        )
+        if session_composition is not None:
+            email_session_service = session_composition.service
+    if password_recovery_service is None:
+        shared_engine = (
+            authentication_composition.engine
+            if authentication_composition is not None
+            else session_composition.engine if session_composition is not None else None
+        )
+        password_recovery_composition = compose_password_recovery(
+            resolved_settings, shared_engine=shared_engine
+        )
+        if password_recovery_composition is not None:
+            password_recovery_service = password_recovery_composition.service
 
-@app.post("/demo/reset")
-def reset_demo():
-    global store
-    store = deepcopy(SEED)
-    return {"status": "reset"}
+    if onboarding_service is None:
+        shared_engine = (
+            authentication_composition.engine
+            if authentication_composition is not None
+            else (
+                session_composition.engine
+                if session_composition is not None
+                else (
+                    password_recovery_composition.engine
+                    if password_recovery_composition is not None
+                    else None
+                )
+            )
+        )
+        onboarding_composition = compose_onboarding(
+            resolved_settings, shared_engine=shared_engine
+        )
+        if onboarding_composition is not None:
+            onboarding_service = onboarding_composition.service
+
+    application.include_router(
+        create_api_router(
+            resource_service,
+            email_registration_service,
+            authentication_availability_diagnostic,
+            email_session_service,
+            password_recovery_service,
+            (
+                RegistrationPolicyResult(
+                    legal_consent_required=(
+                        resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                    ),
+                    legal_policy_status=(
+                        LegalPolicyStatus.ACTIVE
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else LegalPolicyStatus.DEFERRED_NONPRODUCTION
+                    ),
+                    terms_version=(
+                        resolved_settings.current_terms_version
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                    terms_url=(
+                        resolved_settings.current_terms_url
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                    privacy_version=(
+                        resolved_settings.current_privacy_version
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                    privacy_url=(
+                        resolved_settings.current_privacy_url
+                        if resolved_settings.auth_legal_consent_mode
+                        is AuthenticationLegalConsentMode.REQUIRED
+                        else None
+                    ),
+                )
+                if (
+                    resolved_settings.auth_legal_consent_mode
+                    is AuthenticationLegalConsentMode.DEFERRED_NONPRODUCTION
+                    or (
+                        resolved_settings.current_terms_version is not None
+                        and resolved_settings.current_terms_url is not None
+                        and resolved_settings.current_privacy_version is not None
+                        and resolved_settings.current_privacy_url is not None
+                    )
+                )
+                else None
+            ),
+            onboarding_service,
+        )
+    )
+
+    if plan_service is None and onboarding_composition is not None:
+        plan_service = compose_planning(onboarding_composition.engine)
+    application.include_router(
+        create_planning_router(plan_service, onboarding_service, email_session_service)
+    )
+
+    if notification_service is None and onboarding_composition is not None:
+        notification_service = compose_notifications(onboarding_composition.engine)
+    application.include_router(
+        create_notification_router(
+            notification_service, onboarding_service, email_session_service
+        )
+    )
+
+    def authentication_contract_openapi() -> dict[str, object]:
+        if application.openapi_schema is None:
+            schema = get_openapi(
+                title=application.title,
+                version=application.version,
+                routes=application.routes,
+            )
+            schema["x-pos-authentication-contract-version"] = (
+                AUTHENTICATION_CONTRACT_VERSION
+            )
+            schema["x-pos-today-contract-version"] = "1.0"
+            schema["x-pos-plan-contract-version"] = "1.0"
+            schema["x-pos-inbox-contract-version"] = "1.0"
+            application.openapi_schema = schema
+        return application.openapi_schema
+
+    application.openapi = authentication_contract_openapi
+    if authentication_composition is not None:
+        application.add_event_handler(
+            "shutdown",
+            lambda: dispose_database_engine(authentication_composition.engine),
+        )
+    if session_composition is not None and authentication_composition is None:
+        application.add_event_handler(
+            "shutdown", lambda: dispose_database_engine(session_composition.engine)
+        )
+    if (
+        password_recovery_composition is not None
+        and authentication_composition is None
+        and session_composition is None
+    ):
+        application.add_event_handler(
+            "shutdown",
+            lambda: dispose_database_engine(password_recovery_composition.engine),
+        )
+    if (
+        onboarding_composition is not None
+        and authentication_composition is None
+        and session_composition is None
+        and password_recovery_composition is None
+    ):
+        application.add_event_handler(
+            "shutdown", lambda: dispose_database_engine(onboarding_composition.engine)
+        )
+
+    return application
+
+
+app = create_app()

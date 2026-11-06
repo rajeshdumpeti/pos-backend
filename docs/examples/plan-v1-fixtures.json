@@ -1,0 +1,345 @@
+{
+  "empty_current": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-02T14:00:00Z",
+    "timezone": "America/New_York",
+    "selected_date": "2026-10-02",
+    "date_relation": "current",
+    "freshness": {
+      "state": "current",
+      "as_of": "2026-10-02T14:00:00Z"
+    },
+    "summary": {
+      "total": 0,
+      "completed": 0,
+      "remaining": 0,
+      "scheduled_remaining": 0,
+      "unscheduled_remaining": 0,
+      "completion_percentage": null
+    },
+    "insight": {
+      "state": "empty",
+      "code": "selected_date_empty",
+      "recommendation": "Create a plan item",
+      "reason": "No items are currently assigned to this date.",
+      "action": "plan_item.create",
+      "plan_item_id": null,
+      "evidence": {
+        "selected_date": "2026-10-02",
+        "date_relation": "current",
+        "total": 0,
+        "completed": 0,
+        "remaining": 0,
+        "is_priority": null,
+        "timing_state": null,
+        "scheduled_start_at": null
+      }
+    },
+    "items": [],
+    "page": {
+      "limit": 50,
+      "next_cursor": null,
+      "has_more": false
+    }
+  },
+  "current_ongoing_priority_page_one": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-02T14:00:00Z",
+    "timezone": "America/New_York",
+    "selected_date": "2026-10-02",
+    "date_relation": "current",
+    "freshness": {
+      "state": "current",
+      "as_of": "2026-10-02T14:00:00Z"
+    },
+    "summary": {
+      "total": 2,
+      "completed": 0,
+      "remaining": 2,
+      "scheduled_remaining": 1,
+      "unscheduled_remaining": 1,
+      "completion_percentage": 0
+    },
+    "insight": {
+      "state": "available",
+      "code": "current_ongoing_priority",
+      "recommendation": "View this plan item",
+      "reason": "This is an explicit priority. This incomplete item is within its scheduled interval.",
+      "action": "plan_item.view",
+      "plan_item_id": "00000000-0000-0000-0000-000000000001",
+      "evidence": {
+        "selected_date": "2026-10-02",
+        "date_relation": "current",
+        "total": 2,
+        "completed": 0,
+        "remaining": 2,
+        "is_priority": true,
+        "timing_state": "ongoing",
+        "scheduled_start_at": "2026-10-02T13:00:00Z"
+      }
+    },
+    "items": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "title": "Item 1",
+        "scheduled_for_date": "2026-10-02",
+        "timezone": "America/New_York",
+        "scheduled_start_at": "2026-10-02T13:00:00Z",
+        "scheduled_end_at": "2026-10-02T15:00:00Z",
+        "is_priority": true,
+        "completed_at": null,
+        "created_at": "2026-10-02T09:00:01Z",
+        "updated_at": "2026-10-02T14:00:00Z",
+        "version": 1,
+        "section": "scheduled_incomplete",
+        "timing_state": "ongoing",
+        "action": "plan_item.view"
+      }
+    ],
+    "page": {
+      "limit": 1,
+      "next_cursor": "eyJ2IjoxLCJjb250ZXh0IjoiMGU2ODEwMjdhMjJjNzFlZDFiZWNhZjIwMjUyNGViZTQwZGQ5MDNiNWVlZGRkNWI3YTU4ZGM3ZmE1MGZiZGI5OCIsImtleSI6WzAsMCwxNzkwOTQ2MDAwMDAwMDAwLCIwMDAwMDAwMC0wMDAwLTAwMDAtMDAwMC0wMDAwMDAwMDAwMDEiXX0",
+      "has_more": true
+    }
+  },
+  "past_still_incomplete": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-02T14:00:00Z",
+    "timezone": "America/New_York",
+    "selected_date": "2026-10-01",
+    "date_relation": "past",
+    "freshness": {
+      "state": "current",
+      "as_of": "2026-10-02T14:00:00Z"
+    },
+    "summary": {
+      "total": 1,
+      "completed": 0,
+      "remaining": 1,
+      "scheduled_remaining": 0,
+      "unscheduled_remaining": 1,
+      "completion_percentage": 0
+    },
+    "insight": {
+      "state": "available",
+      "code": "past_remaining_priority",
+      "recommendation": "View this plan item",
+      "reason": "This priority is still incomplete.",
+      "action": "plan_item.view",
+      "plan_item_id": "00000000-0000-0000-0000-000000000001",
+      "evidence": {
+        "selected_date": "2026-10-01",
+        "date_relation": "past",
+        "total": 1,
+        "completed": 0,
+        "remaining": 1,
+        "is_priority": true,
+        "timing_state": "unscheduled",
+        "scheduled_start_at": null
+      }
+    },
+    "items": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "title": "Item 1",
+        "scheduled_for_date": "2026-10-01",
+        "timezone": "America/New_York",
+        "scheduled_start_at": null,
+        "scheduled_end_at": null,
+        "is_priority": true,
+        "completed_at": null,
+        "created_at": "2026-10-02T09:00:01Z",
+        "updated_at": "2026-10-02T14:00:00Z",
+        "version": 1,
+        "section": "unscheduled_incomplete",
+        "timing_state": "unscheduled",
+        "action": "plan_item.view"
+      }
+    ],
+    "page": {
+      "limit": 50,
+      "next_cursor": null,
+      "has_more": false
+    }
+  },
+  "past_completed_later": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-02T14:00:00Z",
+    "timezone": "America/New_York",
+    "selected_date": "2026-10-01",
+    "date_relation": "past",
+    "freshness": {
+      "state": "current",
+      "as_of": "2026-10-02T14:00:00Z"
+    },
+    "summary": {
+      "total": 1,
+      "completed": 1,
+      "remaining": 0,
+      "scheduled_remaining": 0,
+      "unscheduled_remaining": 0,
+      "completion_percentage": 100
+    },
+    "insight": {
+      "state": "available",
+      "code": "selected_date_complete",
+      "recommendation": "Create a plan item",
+      "reason": "All items currently assigned to this date are completed.",
+      "action": "plan_item.create",
+      "plan_item_id": null,
+      "evidence": {
+        "selected_date": "2026-10-01",
+        "date_relation": "past",
+        "total": 1,
+        "completed": 1,
+        "remaining": 0,
+        "is_priority": null,
+        "timing_state": null,
+        "scheduled_start_at": null
+      }
+    },
+    "items": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "title": "Item 1",
+        "scheduled_for_date": "2026-10-01",
+        "timezone": "America/New_York",
+        "scheduled_start_at": null,
+        "scheduled_end_at": null,
+        "is_priority": false,
+        "completed_at": "2026-10-02T14:00:00Z",
+        "created_at": "2026-10-02T09:00:01Z",
+        "updated_at": "2026-10-02T14:00:00Z",
+        "version": 1,
+        "section": "completed",
+        "timing_state": "completed",
+        "action": "plan_item.view"
+      }
+    ],
+    "page": {
+      "limit": 50,
+      "next_cursor": null,
+      "has_more": false
+    }
+  },
+  "future_scheduled_priority": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-02T14:00:00Z",
+    "timezone": "America/New_York",
+    "selected_date": "2026-10-03",
+    "date_relation": "future",
+    "freshness": {
+      "state": "current",
+      "as_of": "2026-10-02T14:00:00Z"
+    },
+    "summary": {
+      "total": 1,
+      "completed": 0,
+      "remaining": 1,
+      "scheduled_remaining": 1,
+      "unscheduled_remaining": 0,
+      "completion_percentage": 0
+    },
+    "insight": {
+      "state": "available",
+      "code": "future_scheduled_priority",
+      "recommendation": "View this plan item",
+      "reason": "This is the earliest scheduled incomplete priority assigned to this date.",
+      "action": "plan_item.view",
+      "plan_item_id": "00000000-0000-0000-0000-000000000001",
+      "evidence": {
+        "selected_date": "2026-10-03",
+        "date_relation": "future",
+        "total": 1,
+        "completed": 0,
+        "remaining": 1,
+        "is_priority": true,
+        "timing_state": "upcoming",
+        "scheduled_start_at": "2026-10-03T15:00:00Z"
+      }
+    },
+    "items": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "title": "Item 1",
+        "scheduled_for_date": "2026-10-03",
+        "timezone": "America/New_York",
+        "scheduled_start_at": "2026-10-03T15:00:00Z",
+        "scheduled_end_at": null,
+        "is_priority": true,
+        "completed_at": null,
+        "created_at": "2026-10-02T09:00:01Z",
+        "updated_at": "2026-10-02T14:00:00Z",
+        "version": 1,
+        "section": "scheduled_incomplete",
+        "timing_state": "upcoming",
+        "action": "plan_item.view"
+      }
+    ],
+    "page": {
+      "limit": 50,
+      "next_cursor": null,
+      "has_more": false
+    }
+  },
+  "insight_unavailable": {
+    "contract_version": "1.0",
+    "generated_at": "2026-10-02T14:00:00Z",
+    "timezone": "America/New_York",
+    "selected_date": "2026-10-02",
+    "date_relation": "current",
+    "freshness": {
+      "state": "current",
+      "as_of": "2026-10-02T14:00:00Z"
+    },
+    "summary": {
+      "total": 1,
+      "completed": 0,
+      "remaining": 1,
+      "scheduled_remaining": 0,
+      "unscheduled_remaining": 1,
+      "completion_percentage": 0
+    },
+    "insight": {
+      "state": "unavailable",
+      "code": "insight_unavailable",
+      "recommendation": "Insight is unavailable",
+      "reason": "The selected-date items remain available.",
+      "action": null,
+      "plan_item_id": null,
+      "evidence": {
+        "selected_date": "2026-10-02",
+        "date_relation": "current",
+        "total": 1,
+        "completed": 0,
+        "remaining": 1,
+        "is_priority": null,
+        "timing_state": null,
+        "scheduled_start_at": null
+      }
+    },
+    "items": [
+      {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "title": "Item 1",
+        "scheduled_for_date": "2026-10-02",
+        "timezone": "America/New_York",
+        "scheduled_start_at": null,
+        "scheduled_end_at": null,
+        "is_priority": false,
+        "completed_at": null,
+        "created_at": "2026-10-02T09:00:01Z",
+        "updated_at": "2026-10-02T14:00:00Z",
+        "version": 1,
+        "section": "unscheduled_incomplete",
+        "timing_state": "unscheduled",
+        "action": "plan_item.view"
+      }
+    ],
+    "page": {
+      "limit": 50,
+      "next_cursor": null,
+      "has_more": false
+    }
+  }
+}
