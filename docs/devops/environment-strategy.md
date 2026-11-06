@@ -1,6 +1,7 @@
 # Environment strategy
 
 POS Backend recognizes five configuration contexts:
+POS Backend recognizes four configuration contexts:
 
 | Context     | Current mapping                                                    |
 | ----------- | ------------------------------------------------------------------ |

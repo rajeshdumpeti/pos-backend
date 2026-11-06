@@ -16,6 +16,8 @@ Use the Python 3.12 `.venv` workflow and validation commands in the
 [README](README.md). The README is the source of truth for first-time setup,
 daily server startup, environment readiness, and troubleshooting.
 
+Use the ignored local virtual environment:
+
 Keep changes focused. Do not commit virtual environments, caches, real
 environment files, credentials, certificates, service-account files, or private
 user data.

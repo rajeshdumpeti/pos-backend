@@ -1,3 +1,4 @@
+
 """Central, secret-safe runtime configuration for POS Backend."""
 
 from collections.abc import Mapping
@@ -118,9 +119,12 @@ _DATABASE_SCHEMES = {"postgresql", "postgresql+asyncpg", "postgresql+psycopg"}
 _REDIS_SCHEMES = {"redis", "rediss"}
 
 
+
+
 def _optional_value(environ: Mapping[str, str], name: str) -> str | None:
     value = environ.get(name, "").strip()
     return value or None
+
 
 
 def _parse_environment(environ: Mapping[str, str]) -> AppEnvironment:
