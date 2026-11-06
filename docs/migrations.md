@@ -16,8 +16,8 @@ product schema.
 - `alembic.ini` contains paths and logging only. It contains no database URL.
 
 Importing the metadata registers models but never constructs an engine, imports
-FastAPI, or opens a connection. The metadata is intentionally empty until an
-approved persistence milestone introduces its models.
+FastAPI, or opens a connection. The metadata includes the models introduced by
+the reviewed persistence revisions.
 
 ## Baseline and single-head policy
 
@@ -42,7 +42,10 @@ Revision `0004_auth_contract_v1` adds a unique
 constraint on `refresh_rotation_retry_receipts.refresh_request_id`, binding one
 logical refresh key to one request payload under concurrency. Before upgrading a
 database containing pre-release traffic, verify that no duplicate request IDs
-exist. The migration fails safely rather than choosing a receipt to delete.
+exist and preserve a backup. The migration deletes duplicate non-null request-ID
+receipts, retaining the earliest `created_at` and then lowest `id` per request ID,
+before adding uniqueness. Downgrade removes the constraint but cannot restore
+deleted receipts.
 
 Revision `0005_authoritative_onboarding` precedes daily planning. It creates
 one account-owned onboarding state, strict required-preference checks, typed
@@ -109,7 +112,8 @@ schema mutation outside Alembic is prohibited.
 
 ## Future online local workflow
 
-Online mode obtains `DATABASE_URL` only through `app/config.py`, passes its
+Online mode uses `load_database_settings()` from `app/config.py`, requiring no
+authentication, email, legal, Redis, or CORS settings. It passes its
 masked `SecretStr` to the existing engine boundary, and disposes the engine
 after migration. Missing configuration fails with the variable name but no
 value. Alembic never reads `.env` itself; an operator may populate the process
@@ -142,10 +146,10 @@ The baseline creates no product schema. Revision `0002_auth_persistence` creates
 authentication persistence only. Revision `0003_registration_flow` adds no
 product schema or seed data; runtime behavior remains owned by application and
 infrastructure composition. Revision `0004_auth_contract_v1` changes no product
-schema and deletes no data. Revision `0005_authoritative_onboarding` adds the
+schema and deletes duplicate refresh receipts as described above. Revision `0005_authoritative_onboarding` adds the
 reversible onboarding table without modifying existing account rows.
 
-Revision `0006_daily_planning` is the single current head. It adds account-owned
+Revision `0006_daily_planning` added daily planning. It adds account-owned
 plan items and atomic creation receipts, with no seeds/backfills or changes to
 0004/0005. See [Today architecture](today-dashboard.md) for constraints, indexes,
 transaction rules and the guarded reversible validation sequence.
@@ -153,7 +157,7 @@ transaction rules and the guarded reversible validation sequence.
 Milestone 2.C selected-date [Plan v1](plan-v1.md) makes no schema change. The
 existing account/date/start index supports its equality-filtered full-date facts;
 global sorting is application-owned. Head and model metadata remain unchanged at
-0006_daily_planning, with existing offline parity and guarded live parity checks.
+0006_daily_planning at that milestone, with existing offline parity and guarded live parity checks.
 
 ## Milestone 16 background-job foundation
 
@@ -171,3 +175,7 @@ cancellation index. It adds no fabricated backfill. Downgrade deletes feature jo
 intents before restoring the previous job allow-list and removing the feature
 tables; review that destructive rollback before any authorized live execution.
 See [notification-inbox.md](notification-inbox.md) and its guarded parity tests.
+
+The current repository head is `0008_notification_inbox`. See
+[staging database deployment](devops/staging-database.md) for database settings,
+TLS, deployment commands, and recovery procedures.

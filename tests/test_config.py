@@ -25,7 +25,7 @@ def test_local_settings_do_not_require_future_secrets():
     ],
 )
 def test_supported_environment_names_are_normalized(
-    environment_name: str, expected_environment: AppEnvironment
+    environment_name: str, expected_environment: AppEnvironment, trusted_ca_file
 ):
     environment = {
         "APP_ENV": f"  {environment_name}  ",
@@ -54,6 +54,8 @@ def test_supported_environment_names_are_normalized(
                 "CURRENT_PRIVACY_URL": "https://pos.com/legal/privacy",
             }
         )
+    if expected_environment in {AppEnvironment.STAGING, AppEnvironment.PRODUCTION}:
+        environment.update(DATABASE_SSLMODE="verify-full", DATABASE_SSLROOTCERT=str(trusted_ca_file))
     settings = load_settings(environment)
 
     assert settings.app_env is expected_environment

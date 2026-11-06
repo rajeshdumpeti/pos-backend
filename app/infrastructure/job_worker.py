@@ -21,7 +21,7 @@ def process_pending(limit: int = 10) -> int:
         if settings.database_url is None:
             print("Background job database configuration is unavailable")
             return 2
-        engine = create_database_engine(settings.database_url)
+        engine = create_database_engine(settings.database_url, settings=settings)
         sessions = create_session_factory(engine)
 
         def factory():

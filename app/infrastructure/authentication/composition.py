@@ -52,7 +52,7 @@ def compose_email_registration(
     ):
         return None
 
-    engine = create_database_engine(settings.database_url)
+    engine = create_database_engine(settings.database_url, settings=settings)
     session_factory = create_session_factory(engine)
     service = EmailRegistrationService(
         lambda request_id: SqlAlchemyAuthenticationUnitOfWork(

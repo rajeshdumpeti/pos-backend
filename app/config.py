@@ -9,6 +9,7 @@ from email.utils import parseaddr
 import os
 import re
 from ipaddress import ip_network
+import ssl
 
 from app.application.authentication_security import AbusePolicy, DEFAULT_POLICIES
 from typing import Self
@@ -39,13 +40,85 @@ class AuthenticationLegalConsentMode(StrEnum):
     DEFERRED_NONPRODUCTION = "deferred_nonproduction"
 
 
-class Settings(BaseModel):
-    """Validated settings with sensitive values excluded from representations."""
+class DatabaseSettings(BaseModel):
+    """Database-only settings shared by the API, workers, and Alembic."""
 
     model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
 
     app_env: AppEnvironment
     database_url: SecretStr | None = Field(default=None, repr=False)
+    database_pool_size: int = Field(default=2, ge=1)
+    database_max_overflow: int = Field(default=0, ge=0)
+    database_pool_timeout: int = Field(default=10, ge=1)
+    database_connect_timeout: int = Field(default=10, ge=1)
+    database_sslmode: str | None = None
+    database_sslrootcert: str | None = Field(default=None, repr=False)
+
+    @model_validator(mode="after")
+    def validate_database(self) -> Self:
+        if self.database_url is None:
+            return self
+        raw = self.database_url.get_secret_value()
+        _validate_secret_url(raw, "DATABASE_URL", _DATABASE_SCHEMES)
+        try:
+            pairs = parse_qsl(urlsplit(raw).query, strict_parsing=True)
+            query = dict(pairs)
+            if len(query) != len(pairs):
+                raise ValueError
+        except ValueError:
+            raise ConfigurationError("DATABASE_URL query is invalid") from None
+        protected = self.app_env in _PROTECTED_ENVIRONMENTS
+        mode = self.database_sslmode or query.get("sslmode")
+        if mode is not None and mode not in {
+            "disable", "allow", "prefer", "require", "verify-ca", "verify-full"
+        }:
+            raise ConfigurationError("DATABASE_SSLMODE is invalid")
+        if protected:
+            if mode != "verify-full" or query.get("sslmode", mode) != "verify-full":
+                raise ConfigurationError("Protected databases require sslmode=verify-full")
+            # Prevent libpq URL overrides of the verified target or trust settings.
+            if set(query) - {"sslmode", "sslrootcert", "connect_timeout", "application_name"}:
+                raise ConfigurationError("DATABASE_URL contains unsupported protected connection options")
+            if query.get("sslrootcert", self.database_sslrootcert) != self.database_sslrootcert:
+                raise ConfigurationError("DATABASE_URL conflicts with DATABASE_SSLROOTCERT")
+        if protected or mode in {"verify-ca", "verify-full"}:
+            if not self.database_sslrootcert:
+                raise ConfigurationError("DATABASE_SSLROOTCERT is required for verified TLS")
+            try:
+                ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT).load_verify_locations(
+                    cafile=self.database_sslrootcert
+                )
+            except (OSError, ValueError):
+                raise ConfigurationError("DATABASE_SSLROOTCERT must be a readable valid CA certificate file") from None
+        return self
+
+
+def _database_options(source: Mapping[str, str]) -> dict[str, object]:
+    return {
+        "database_pool_size": _parse_int(source, "DATABASE_POOL_SIZE", 2),
+        "database_max_overflow": _parse_int(source, "DATABASE_MAX_OVERFLOW", 0, minimum=0),
+        "database_pool_timeout": _parse_int(source, "DATABASE_POOL_TIMEOUT", 10),
+        "database_connect_timeout": _parse_int(source, "DATABASE_CONNECT_TIMEOUT", 10),
+        "database_sslmode": _optional_value(source, "DATABASE_SSLMODE"),
+        "database_sslrootcert": _optional_value(source, "DATABASE_SSLROOTCERT"),
+    }
+
+
+def load_database_settings(environ: Mapping[str, str] | None = None) -> DatabaseSettings:
+    """Load only database variables; no authentication, email, or legal requirements."""
+    source = os.environ if environ is None else environ
+    return DatabaseSettings(
+        app_env=_parse_environment(source),
+        database_url=_parse_secret_url(source, "DATABASE_URL", _DATABASE_SCHEMES),
+        **_database_options(source),
+    )
+
+
+class Settings(DatabaseSettings):
+    """Validated settings with sensitive values excluded from representations."""
+
+    model_config = ConfigDict(frozen=True, hide_input_in_errors=True)
+
     redis_url: SecretStr | None = Field(default=None, repr=False)
     jwt_secret: SecretStr | None = Field(default=None, repr=False)
     auth_refresh_receipt_encryption_key: SecretStr | None = Field(default=None, repr=False)
@@ -115,7 +188,7 @@ _PROTECTED_ENVIRONMENTS = {
     AppEnvironment.STAGING,
     AppEnvironment.PRODUCTION,
 }
-_DATABASE_SCHEMES = {"postgresql", "postgresql+asyncpg", "postgresql+psycopg"}
+_DATABASE_SCHEMES = {"postgresql", "postgresql+psycopg"}
 _REDIS_SCHEMES = {"redis", "rediss"}
 
 
@@ -493,6 +566,7 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
 
     return Settings(
         app_env=app_environment,
+        **_database_options(source),
         auth_rate_limit_backend=_optional_value(source, "AUTH_RATE_LIMIT_BACKEND") or "memory",
         auth_rate_limit_key=_parse_auth_secret(source, "AUTH_RATE_LIMIT_KEY"),
         auth_rate_limit_policies={operation: AbusePolicy(

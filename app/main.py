@@ -29,7 +29,7 @@ from app.infrastructure.authentication.session_composition import compose_email_
 from app.infrastructure.authentication.password_recovery_composition import (
     compose_password_recovery,
 )
-from app.infrastructure.database import dispose_database_engine
+from app.infrastructure.database import create_database_engine, dispose_database_engine
 from app.application.onboarding import OnboardingService
 from app.infrastructure.onboarding import compose_onboarding
 from app.application.planning import PlanService
@@ -128,6 +128,22 @@ def create_app(
         )
         if onboarding_composition is not None:
             onboarding_service = onboarding_composition.service
+
+    database_engine = next(
+        (composition.engine for composition in (
+            authentication_composition, session_composition,
+            password_recovery_composition, onboarding_composition,
+        ) if composition is not None),
+        None,
+    )
+    if database_engine is None and resolved_settings.database_url is not None:
+        database_engine = create_database_engine(
+            resolved_settings.database_url, settings=resolved_settings
+        )
+        application.add_event_handler(
+            "shutdown", lambda: dispose_database_engine(database_engine)
+        )
+    application.state.database_engine = database_engine
 
     application.include_router(
         create_api_router(

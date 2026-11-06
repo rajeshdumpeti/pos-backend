@@ -183,3 +183,11 @@ process environment. Future GitHub Environment Secrets are for approved CI
 needs, while deployed runtime secrets belong in the selected hosting platform's
 secret manager. GitHub, hosting, and EAS configuration remain outside the scope
 of this foundation.
+
+## Staging database
+
+Database pool defaults, verified TLS requirements, Session Pooler setup, readiness,
+and the separate Alembic release procedure are documented in
+[staging database deployment](staging-database.md). `load_database_settings()`
+reads only database variables for migration jobs; full application startup keeps
+all existing authentication and delivery requirements.

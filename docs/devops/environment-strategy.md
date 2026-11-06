@@ -23,3 +23,7 @@ Runtime environment names are normalized to lowercase and validated. Local,
 development, and test may use the current wildcard CORS default. Staging and
 production require explicit HTTP(S) origins, but no credentials, hosted runtime,
 or deployment configuration exists for those environments yet.
+
+Staging database preparation targets Supabase PostgreSQL 17 through the IPv4
+Session Pooler. See [staging database deployment](staging-database.md) for required
+variables, verified TLS, migration/recovery steps, and per-process pool capacity.

@@ -159,6 +159,7 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
 
     assert operation_ids == [
         "get_health",
+        "get_database_readiness",
         "get_authentication_registration_policy",
         "create_email_registration",
         "confirm_email_verification",

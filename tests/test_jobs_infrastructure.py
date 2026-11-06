@@ -180,7 +180,7 @@ def test_cli_outputs_counts_only_and_disposes_engine_on_success_and_failure(
     monkeypatch.setattr(
         job_worker, "load_settings", lambda: Mock(database_url=object())
     )
-    monkeypatch.setattr(job_worker, "create_database_engine", lambda _: engine)
+    monkeypatch.setattr(job_worker, "create_database_engine", lambda _, **_kwargs: engine)
     monkeypatch.setattr(job_worker, "create_session_factory", lambda _: Mock())
     dispose = Mock()
     monkeypatch.setattr(job_worker, "dispose_database_engine", dispose)
