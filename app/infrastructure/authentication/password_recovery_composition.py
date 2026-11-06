@@ -34,7 +34,7 @@ def compose_password_recovery(
         or settings.auth_password_reset_url is None
     ):
         return None
-    engine = shared_engine or create_database_engine(settings.database_url)
+    engine = shared_engine or create_database_engine(settings.database_url, settings=settings)
     session_factory = create_session_factory(engine)
     service = PasswordRecoveryService(
         lambda request_id: SqlAlchemyAuthenticationUnitOfWork(

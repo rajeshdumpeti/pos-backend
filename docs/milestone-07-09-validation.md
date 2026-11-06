@@ -92,8 +92,10 @@
     one-key/one-payload refresh invariant. Linear head `0004_auth_contract_v1`
     adds only unique constraint
     `uq_refresh_rotation_retry_receipts__refresh_request_id`; downgrade drops it.
-    It seeds/deletes no data. Pre-release databases with duplicates must be
-    audited before upgrade; the migration fails instead of deleting a receipt.
+    It seeds no data. Before adding uniqueness it deletes duplicate non-null
+    refresh request-ID receipts, retaining the earliest `created_at`, then lowest
+    `id`. Audit and back up pre-release data before upgrade; downgrade cannot
+    restore those receipts.
 21. **OpenAPI.** Generation passes. Version `1.0.0`, twelve unique authentication
     operation IDs, named policy and verification-continuation schemas, the typed
     sign-in 403 union, exact statuses, and 429 headers are covered by tests.

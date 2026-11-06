@@ -1,7 +1,6 @@
 """Deterministic admission, HTTP, proxy, claim and containment regressions."""
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-import json
 import logging
 import traceback
 
@@ -274,12 +273,13 @@ def test_redis_configuration_cannot_override_timeouts():
                            'AUTH_RATE_LIMIT_KEY':base64.urlsafe_b64encode(bytes(range(32))).decode()})
 
 
-def test_protected_environment_rejects_memory_and_insecure_delivery():
+def test_protected_environment_rejects_memory_and_insecure_delivery(trusted_ca_file):
     import base64
     from app.config import Settings
     from pydantic import SecretStr
     secret = SecretStr(base64.urlsafe_b64encode(bytes(range(32))).decode())
-    valid = dict(app_env='production', cors_origins=('https://app.example.test',),
+    valid = dict(app_env='production', database_sslmode='verify-full',
+                 database_sslrootcert=str(trusted_ca_file), cors_origins=('https://app.example.test',),
                  database_url=SecretStr('postgresql://localhost/pos_test'),
                  jwt_secret=SecretStr('x'*64), auth_challenge_digest_key=secret,
                  auth_outbox_encryption_key=secret, auth_refresh_receipt_encryption_key=secret,

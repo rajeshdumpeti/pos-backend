@@ -31,7 +31,7 @@ def inspect_latest() -> int:
         ):
             print("Local email inspection is not enabled")
             return 2
-        engine = create_database_engine(settings.database_url)
+        engine = create_database_engine(settings.database_url, settings=settings)
         session_factory = create_session_factory(engine)
         with session_factory() as session:
             record = session.scalars(

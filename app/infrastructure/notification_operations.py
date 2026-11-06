@@ -35,7 +35,7 @@ def main() -> int:
         if settings.database_url is None:
             print("Notification maintenance configuration is unavailable")
             return 2
-        engine = create_database_engine(settings.database_url)
+        engine = create_database_engine(settings.database_url, settings=settings)
         sessions = create_session_factory(engine)
         service = JobService(lambda: SqlAlchemyJobUnitOfWork(sessions))
         service.schedule(CLEANUP_TYPE, None, {"limit": limit}, instant, key)
