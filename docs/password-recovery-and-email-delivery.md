@@ -84,3 +84,6 @@ delivery before production enablement.
 
 Broad account-aware/IP rate limiting, provider webhooks, bounce/complaint
 handling, inbox placement monitoring, and product UI integration are deferred.
+
+For the combined finite staging invocation and its separate exit-code contract,
+see [temporary staging worker tick](devops/staging-worker-tick.md).
