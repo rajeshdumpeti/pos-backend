@@ -1,4 +1,5 @@
 """Bounded local/Redis admission adapters and domain-separated private keys."""
+
 import hashlib
 import hmac
 import math
@@ -12,7 +13,9 @@ if TYPE_CHECKING:
     from app.config import Settings
 
 from app.application.authentication_security import (
-    AuthenticationAdmission, Bucket, LimiterUnavailableError,
+    AuthenticationAdmission,
+    Bucket,
+    LimiterUnavailableError,
 )
 from app.infrastructure.authentication.registration import EmailValidatorNormalizer
 
@@ -23,8 +26,11 @@ class HmacSecurityKeys:
         self._normalizer = EmailValidatorNormalizer()
 
     def derive(self, domain: str, value: str) -> str:
-        return hmac.new(self._key, ("pos:auth-limit:v1:" + domain + "\0" + value).encode(),
-                        hashlib.sha256).hexdigest()
+        return hmac.new(
+            self._key,
+            ("pos:auth-limit:v1:" + domain + "\0" + value).encode(),
+            hashlib.sha256,
+        ).hexdigest()
 
     def identity(self, value: str) -> str:
         try:
@@ -35,8 +41,10 @@ class HmacSecurityKeys:
 
 class InMemoryLimiter:
     """Explicitly local; capped storage, atomic admission, non-sliding cooldown."""
-    def __init__(self, *, clock: Callable[[], float] = time.monotonic,
-                 max_entries: int = 100000) -> None:
+
+    def __init__(
+        self, *, clock: Callable[[], float] = time.monotonic, max_entries: int = 100000
+    ) -> None:
         self._clock = clock
         self._max_entries = max_entries
         self._entries: dict[str, tuple[int, float]] = {}
@@ -48,11 +56,15 @@ class InMemoryLimiter:
             # Bounded by max_entries; local only. No background thread or network.
             self._entries = {k: v for k, v in self._entries.items() if v[1] > now}
             for bucket in buckets:
-                count, expiry = self._entries.get(bucket.key, (0, now + bucket.window_seconds))
+                count, expiry = self._entries.get(
+                    bucket.key, (0, now + bucket.window_seconds)
+                )
                 if count >= bucket.limit:
                     return max(1, min(3600, math.ceil(expiry - now)))
                 if not count and len(self._entries) >= self._max_entries:
-                    raise LimiterUnavailableError("Authentication admission unavailable")
+                    raise LimiterUnavailableError(
+                        "Authentication admission unavailable"
+                    )
                 self._entries[bucket.key] = (count + 1, expiry)
             return 0
 
@@ -89,8 +101,13 @@ return 0
 
 
 class RedisLimiter:
-    def __init__(self, client: object, *, max_entries: int = 100000,
-                 namespace: str = 'pos:{auth-limit-v1}') -> None:
+    def __init__(
+        self,
+        client: object,
+        *,
+        max_entries: int = 100000,
+        namespace: str = "pos:{auth-limit-v1}"
+    ) -> None:
         self._client = client
         self._max_entries = max_entries
         self._namespace = namespace
@@ -100,33 +117,60 @@ class RedisLimiter:
         for bucket in buckets:
             args.extend((bucket.key, bucket.limit, bucket.window_seconds))
         try:
-            result = self._client.eval(REDIS_ADMISSION_SCRIPT, 2,
-                self._namespace + ':counts', self._namespace + ':expiry', *args)
+            result = self._client.eval(
+                REDIS_ADMISSION_SCRIPT,
+                2,
+                self._namespace + ":counts",
+                self._namespace + ":expiry",
+                *args
+            )
             if type(result) is not int or not 0 <= result <= 3600:
                 raise LimiterUnavailableError("Authentication admission unavailable")
             return result
-        except Exception:
-            raise LimiterUnavailableError("Authentication admission unavailable") from None
+        except Exception as error:
+            from app.infrastructure.authentication.redis_client import (
+                raise_safe_redis_error,
+            )
+
+            raise_safe_redis_error(error)
 
 
-def compose_admission(settings: "Settings") -> tuple[AuthenticationAdmission, Callable[[], None]]:
+def compose_admission(
+    settings: "Settings",
+) -> tuple[AuthenticationAdmission, Callable[[], None]]:
     from app.config import decode_authentication_key
-    key = (secrets.token_bytes(32) if settings.auth_rate_limit_key is None else
-           decode_authentication_key(settings.auth_rate_limit_key, 'AUTH_RATE_LIMIT_KEY'))
-    close = lambda: None
-    if settings.auth_rate_limit_backend == 'redis':
-        from redis import Redis
-        from redis.backoff import NoBackoff
-        from redis.retry import Retry
-        assert settings.redis_url is not None
-        # URL query options must not override the explicit security settings.
-        client = Redis.from_url(settings.redis_url.get_secret_value(),
-            socket_connect_timeout=settings.auth_redis_timeout_ms / 1000,
-            socket_timeout=settings.auth_redis_timeout_ms / 1000,
-            retry=Retry(NoBackoff(), 0), retry_on_timeout=False, max_connections=20)
+
+    key = (
+        secrets.token_bytes(32)
+        if settings.auth_rate_limit_key is None
+        else decode_authentication_key(
+            settings.auth_rate_limit_key, "AUTH_RATE_LIMIT_KEY"
+        )
+    )
+
+    def close() -> None:
+        pass
+
+    if settings.auth_rate_limit_backend == "redis":
+        from app.infrastructure.authentication.redis_client import (
+            close_redis_client,
+            create_redis_client,
+        )
+
+        client = create_redis_client(settings)
         limiter = RedisLimiter(client, max_entries=settings.auth_rate_limit_max_entries)
-        close = client.close
+
+        def close() -> None:
+            close_redis_client(client)
+
     else:
         limiter = InMemoryLimiter(max_entries=settings.auth_rate_limit_max_entries)
-    return AuthenticationAdmission(limiter, HmacSecurityKeys(key),
-        settings.auth_rate_limit_policies, settings.auth_rate_limit_global), close
+    return (
+        AuthenticationAdmission(
+            limiter,
+            HmacSecurityKeys(key),
+            settings.auth_rate_limit_policies,
+            settings.auth_rate_limit_global,
+        ),
+        close,
+    )

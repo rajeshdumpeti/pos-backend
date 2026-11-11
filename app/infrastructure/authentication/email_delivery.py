@@ -1,6 +1,7 @@
 """Authentication email rendering, Resend delivery, and bounded worker CLI."""
 
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import ExitStack, contextmanager
 from datetime import UTC, datetime
 from html import escape
 import sys
@@ -20,13 +21,21 @@ from app.application.email_registration import EncryptedOutboxPayload
 from app.application.email_registration import AuthenticationCryptographyError
 from app.config import (
     AuthenticationEmailProvider,
+    ConfigurationError,
+    Settings,
     decode_authentication_key,
     load_settings,
 )
 from app.domain.authentication import AuthenticationEmailOutboxRecord, OutboxMessageKind
 from app.infrastructure.authentication.registration import AesGcmOutboxCipher
-from app.infrastructure.authentication.unit_of_work import SqlAlchemyAuthenticationUnitOfWork
-from app.infrastructure.database import create_database_engine, create_session_factory, dispose_database_engine
+from app.infrastructure.authentication.unit_of_work import (
+    SqlAlchemyAuthenticationUnitOfWork,
+)
+from app.infrastructure.database import (
+    create_database_engine,
+    create_session_factory,
+    dispose_database_engine,
+)
 
 
 class AuthenticationEmailTemplateRenderer:
@@ -69,11 +78,11 @@ class AuthenticationEmailTemplateRenderer:
                 "you can ignore this email."
             )
             html = (
-                '<main><h1>Reset your POS password</h1>'
-                '<p>A password reset was requested for your POS account.</p>'
+                "<main><h1>Reset your POS password</h1>"
+                "<p>A password reset was requested for your POS account.</p>"
                 f'<p><a href="{escape(link, quote=True)}">Reset your password</a></p>'
-                '<p>This link expires in 30 minutes. If you did not request this, '
-                'you can ignore this email.</p></main>'
+                "<p>This link expires in 30 minutes. If you did not request this, "
+                "you can ignore this email.</p></main>"
             )
         else:
             try:
@@ -89,9 +98,9 @@ class AuthenticationEmailTemplateRenderer:
                 "It expires in 10 minutes."
             )
             html = (
-                '<main><h1>Verify your POS email</h1>'
-                f'<p>Your verification code is <strong>{escape(message.code)}</strong>.</p>'
-                '<p>It expires in 10 minutes.</p></main>'
+                "<main><h1>Verify your POS email</h1>"
+                f"<p>Your verification code is <strong>{escape(message.code)}</strong>.</p>"
+                "<p>It expires in 10 minutes.</p></main>"
             )
         return OutboundEmail(
             recipient=record.recipient_normalized_email,
@@ -113,6 +122,10 @@ class ResendEmailProvider:
         self._client = client or httpx.Client(
             base_url="https://api.resend.com", timeout=httpx.Timeout(10.0)
         )
+
+    def close(self) -> None:
+        """Release the HTTP connection pool owned by this worker adapter."""
+        self._client.close()
 
     def send(self, message: OutboundEmail) -> DeliveryReceipt:
         try:
@@ -165,22 +178,26 @@ def _reset_link(base_url: str, token: str) -> str:
     return urlunsplit((parsed.scheme, parsed.netloc, parsed.path, urlencode(query), ""))
 
 
-def process_pending(limit: int) -> int:
-    engine = None
-    try:
-        settings = load_settings()
-        if settings.auth_email_provider is AuthenticationEmailProvider.LOCAL:
-            print("Authentication email delivery is in local inspection mode")
-            return 2
-        if (
-            settings.database_url is None
-            or settings.auth_outbox_encryption_key is None
-            or settings.resend_api_key is None
-            or settings.auth_email_from is None
-        ):
-            print("Authentication email delivery configuration is incomplete")
-            return 2
+def validate_email_configuration(settings: Settings) -> None:
+    if (
+        settings.auth_email_provider is AuthenticationEmailProvider.LOCAL
+        or settings.database_url is None
+        or settings.auth_outbox_encryption_key is None
+        or settings.resend_api_key is None
+        or settings.auth_email_from is None
+    ):
+        raise ConfigurationError(
+            "Authentication email delivery configuration is incomplete"
+        )
+
+
+@contextmanager
+def email_processor(settings: Settings) -> Iterator[AuthenticationEmailDispatcher]:
+    """Compose the existing dispatcher with deterministic resource ownership."""
+    validate_email_configuration(settings)
+    with ExitStack() as resources:
         engine = create_database_engine(settings.database_url, settings=settings)
+        resources.callback(dispose_database_engine, engine)
         session_factory = create_session_factory(engine)
         cipher = AesGcmOutboxCipher(
             decode_authentication_key(
@@ -189,14 +206,31 @@ def process_pending(limit: int) -> int:
             key_id=settings.auth_outbox_encryption_key_id,
             key_version=settings.auth_outbox_encryption_key_version,
         )
-        dispatcher = AuthenticationEmailDispatcher(
+        provider = ResendEmailProvider(settings.resend_api_key)
+        resources.callback(provider.close)
+        yield AuthenticationEmailDispatcher(
             lambda request_id: SqlAlchemyAuthenticationUnitOfWork(
                 session_factory, request_id=request_id
             ),
             AuthenticationEmailTemplateRenderer(cipher, settings.auth_email_from),
-            ResendEmailProvider(settings.resend_api_key),
+            provider,
         )
-        result = dispatcher.process_pending(limit)
+
+
+def process_pending(limit: int) -> int:
+    """Keep the standalone CLI's existing output and exit-code contract."""
+    try:
+        settings = load_settings()
+        if settings.auth_email_provider is AuthenticationEmailProvider.LOCAL:
+            print("Authentication email delivery is in local inspection mode")
+            return 2
+        try:
+            validate_email_configuration(settings)
+        except ConfigurationError:
+            print("Authentication email delivery configuration is incomplete")
+            return 2
+        with email_processor(settings) as dispatcher:
+            result = dispatcher.process_pending(limit)
         print(
             f"claimed={result.claimed} delivered={result.delivered} "
             f"retry_scheduled={result.retry_scheduled} failed={result.failed}"
@@ -205,12 +239,6 @@ def process_pending(limit: int) -> int:
     except BaseException:
         print("Authentication email delivery failed safely")
         return 4
-    finally:
-        if engine is not None:
-            try:
-                dispose_database_engine(engine)
-            except BaseException:
-                pass
 
 
 def main() -> int:
