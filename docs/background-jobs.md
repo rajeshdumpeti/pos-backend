@@ -85,3 +85,6 @@ The validation record and exact delivery status are in [milestone-16-validation.
 4. Terminate a worker after claim and invoke a later batch after lease expiry. Confirm retry limits and stale-acknowledgement fencing. Verify cancellation/supersession before execution and terminal-only bounded cleanup.
 
 Notification Inbox producer events, exact copy, domain preferences, local-time eligibility, occurrence keys, source invalidation and Inbox retention remain separate approval gates for Milestone 17A. Inbox records/APIs, notification producers, push delivery, device tokens, OS permission, frontend changes and a permanent scheduler are not implemented here.
+
+For the combined finite staging invocation and its separate exit-code contract,
+see [temporary staging worker tick](devops/staging-worker-tick.md).

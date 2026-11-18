@@ -1,9 +1,11 @@
 """Deliberate, single-run CLI. No web integration or perpetual worker loop."""
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict
 import sys
 from app.application.jobs import JobService, JobWorker
-from app.config import load_settings
+from app.config import ConfigurationError, Settings, load_settings
 from app.domain.jobs import JOB_TYPE, bounded
 from app.infrastructure.database import (
     create_database_engine,
@@ -13,15 +15,13 @@ from app.infrastructure.database import (
 from app.infrastructure.jobs import SafeJobDiagnostic, SqlAlchemyJobUnitOfWork
 
 
-def process_pending(limit: int = 10) -> int:
-    engine = None
+@contextmanager
+def job_processor(settings: Settings) -> Iterator[JobWorker]:
+    """Reuse the established handlers and UoWs; own only their engine lifetime."""
+    if settings.database_url is None:
+        raise ConfigurationError("Background job database configuration is unavailable")
+    engine = create_database_engine(settings.database_url, settings=settings)
     try:
-        bounded(limit)
-        settings = load_settings()
-        if settings.database_url is None:
-            print("Background job database configuration is unavailable")
-            return 2
-        engine = create_database_engine(settings.database_url, settings=settings)
         sessions = create_session_factory(engine)
 
         def factory():
@@ -33,7 +33,7 @@ def process_pending(limit: int = 10) -> int:
         from app.infrastructure.notifications import SqlAlchemyInboxUnitOfWork
 
         notifications = NotificationService(lambda: SqlAlchemyInboxUnitOfWork(sessions))
-        worker = JobWorker(
+        yield JobWorker(
             factory,
             {
                 JOB_TYPE: service.cleanup,
@@ -43,18 +43,25 @@ def process_pending(limit: int = 10) -> int:
             },
             diagnostic=SafeJobDiagnostic(),
         )
-        summary = worker.process_pending(limit)
+    finally:
+        dispose_database_engine(engine)
+
+
+def process_pending(limit: int = 10) -> int:
+    """Keep the standalone CLI's existing output and exit-code contract."""
+    try:
+        bounded(limit)
+        settings = load_settings()
+        if settings.database_url is None:
+            print("Background job database configuration is unavailable")
+            return 2
+        with job_processor(settings) as worker:
+            summary = worker.process_pending(limit)
         print(" ".join(f"{key}={value}" for key, value in asdict(summary).items()))
         return 3 if summary.dead or summary.lease_lost else 0
     except Exception:
         print("Background job batch failed safely")
         return 4
-    finally:
-        if engine is not None:
-            try:
-                dispose_database_engine(engine)
-            except Exception:
-                pass
 
 
 def main() -> int:
