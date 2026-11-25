@@ -29,6 +29,7 @@ support mobile UI development but do not define the final production API.
 | `GET` | `/api/v1/onboarding` | `200` | `OnboardingResponse` | `401`, `403`, `422`, `500`, `503` | Onboarding | `get_onboarding_state` |
 | `PATCH` | `/api/v1/onboarding` | `200` | `OnboardingResponse` | `400`, `401`, `403`, `409`, `422`, `500`, `503` | Onboarding | `update_onboarding_state` |
 | `POST` | `/api/v1/onboarding/complete` | `200` | `OnboardingResponse` | `401`, `403`, `409`, `422`, `500`, `503` | Onboarding | `complete_onboarding` |
+| `GET` | `/api/v1/features` | `200` | `FeatureFlagsResponse` | `401`, `403`, `500`, `503` | Feature flags | `get_feature_flags` |
 
 `/docs` and `/openapi.json` remain local framework endpoints. The dynamic mock
 routes intentionally retain their existing unversioned paths and fixture shapes.
@@ -215,6 +216,25 @@ Daily planning and Today API inventory, closed schemas, product eligibility, saf
 conflicts, idempotency, timezone rules and supported actions are documented in
 [today-dashboard.md](today-dashboard.md) and the
 [frontend handoff](frontend-today-dashboard-handoff.md).
+
+## Feature flags contract 1.0
+
+GET `/api/v1/features` returns `{ "contract_version": "1.0", "voice_entry": { "enabled": boolean } }`
+for the authenticated account. It uses the same Bearer authentication and completed-onboarding
+gate as Today and Plan, a closed schema, and `Cache-Control: no-store`. It never reveals the
+rollout mode, the allowlist or other accounts. Flags are set by configuration
+(`VOICE_ENTRY_MODE`, `VOICE_ENTRY_ALLOWLIST`); rollback is `VOICE_ENTRY_MODE=off` with no app
+release. Additive: the Today and Plan contracts are unchanged. See [Voice backend](voice/backend.md).
+
+## Entry-source header
+
+`POST /api/v1/plan/items` accepts an optional `X-POS-Entry-Source` header (`manual`,
+`quick_log` or `voice`, case-sensitive). It is declared as a plain optional string and never
+produces a 4xx: a missing, empty, unknown or over-32-character value is `unspecified`. It is
+not part of the idempotency digest or receipt, so the same key and body with a different or
+missing header returns the original 201. It does not change the stored item or the response.
+It is recorded only as the content-free `entry_source` field of the existing
+`plan_item_create` log event. See [Voice backend](voice/backend.md).
 
 ## Plan selected-date contract 1.0
 

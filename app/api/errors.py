@@ -555,6 +555,7 @@ def _error_response(
             "/api/v1/today",
             "/api/v1/notifications",
             "/api/v1/account",
+            "/api/v1/features",
         )
     ):
         headers["Cache-Control"] = "no-store"
