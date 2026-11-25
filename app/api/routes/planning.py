@@ -15,7 +15,7 @@ from app.api.planning_schemas import (
     TodayResponse,
     TodayTimezoneQuery,
 )
-from app.application.planning import PlanService
+from app.application.planning import PlanService, normalize_entry_source
 from app.application.today import TodayService
 from app.application.plan_selected_date import PlanSelectedDateService
 from app.api.plan_read_schemas import PlanSelectedDateQuery, PlanSelectedDateResponse
@@ -111,6 +111,20 @@ def create_planning_router(
                 pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
             ),
         ],
+        entry_source: Annotated[
+            str | None,
+            Header(
+                alias="X-POS-Entry-Source",
+                description=(
+                    "Optional, diagnostic only. Where the request originated: manual, "
+                    "quick_log or voice (case-sensitive). Missing, empty, unknown or "
+                    "over-32-character values are treated as unspecified and never "
+                    "cause an error. It is not part of the idempotency comparison and "
+                    "does not change the stored item or the response."
+                ),
+                examples=["manual", "quick_log", "voice"],
+            ),
+        ] = None,
     ):
         no_store(response)
         return _response(
@@ -119,6 +133,7 @@ def create_planning_router(
                 PlanIntent(**payload.model_dump()),
                 key,
                 get_request_id(request),
+                normalize_entry_source(entry_source),
             )
         )
 

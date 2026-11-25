@@ -12,8 +12,10 @@ from ipaddress import ip_network
 import ssl
 
 from app.application.authentication_security import AbusePolicy, DEFAULT_POLICIES
+from app.application.feature_flags import VoiceEntryMode
 from typing import Self
 from urllib.parse import parse_qsl, urlsplit
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
@@ -161,6 +163,8 @@ class Settings(DatabaseSettings):
     auth_public_origin: str | None = None
     auth_max_body_bytes: int = 16384
     auth_max_authorization_bytes: int = 4096
+    voice_entry_mode: VoiceEntryMode = VoiceEntryMode.OFF
+    voice_entry_allowlist: frozenset[UUID] = frozenset()
 
     @model_validator(mode="after")
     def validate_configuration(self) -> Self:
@@ -648,7 +652,39 @@ def load_settings(environ: Mapping[str, str] | None = None) -> Settings:
         ),
         auth_email_from=_optional_value(source, "AUTH_EMAIL_FROM"),
         auth_password_reset_url=_optional_value(source, "AUTH_PASSWORD_RESET_URL"),
+        voice_entry_mode=_parse_voice_entry_mode(source),
+        voice_entry_allowlist=_parse_voice_entry_allowlist(source),
     )
+
+
+def _parse_voice_entry_mode(environ: Mapping[str, str]) -> VoiceEntryMode:
+    raw = (_optional_value(environ, "VOICE_ENTRY_MODE") or "off").lower()
+    try:
+        return VoiceEntryMode(raw)
+    except ValueError:
+        raise ConfigurationError("VOICE_ENTRY_MODE must be off, allowlist or on") from None
+
+
+_ACCOUNT_UUID = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+)
+
+
+def _parse_voice_entry_allowlist(environ: Mapping[str, str]) -> frozenset[UUID]:
+    """Comma-separated account UUIDs; whitespace and empty entries are tolerated."""
+
+    accounts: set[UUID] = set()
+    for entry in environ.get("VOICE_ENTRY_ALLOWLIST", "").split(","):
+        value = entry.strip()
+        if not value:
+            continue
+        if not _ACCOUNT_UUID.fullmatch(value):
+            # Never echo the value: allowlists identify real accounts.
+            raise ConfigurationError(
+                "VOICE_ENTRY_ALLOWLIST must be a comma-separated list of account UUIDs"
+            )
+        accounts.add(UUID(value))
+    return frozenset(accounts)
 
 
 def _parse_email_provider(environ: Mapping[str, str]) -> AuthenticationEmailProvider:

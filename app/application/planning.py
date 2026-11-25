@@ -22,6 +22,20 @@ from app.domain.planning import (
 )
 
 
+ENTRY_SOURCES = frozenset({"manual", "quick_log", "voice"})
+UNSPECIFIED_ENTRY_SOURCE = "unspecified"
+
+
+def normalize_entry_source(value: str | None) -> str:
+    """Content-free origin of a create request; anything unexpected is "unspecified".
+
+    Never raises: the entry source is diagnostic only and must not affect the request.
+    """
+    if isinstance(value, str) and len(value) <= 32 and value in ENTRY_SOURCES:
+        return value
+    return UNSPECIFIED_ENTRY_SOURCE
+
+
 @dataclass(frozen=True, slots=True)
 class CreationReceipt:
     request_hash: str
@@ -81,6 +95,7 @@ class PlanDiagnostic(Protocol):
         account_id: UUID,
         item_id: UUID | None,
         version: int,
+        entry_source: str | None = None,
     ) -> None: ...
 
 
@@ -98,15 +113,37 @@ class PlanService:
         self.diagnostic = diagnostic
         self.integration = integration
 
-    def _emit(self, operation: str, request_id: str, item: PlanItem) -> None:
+    def _emit(
+        self,
+        operation: str,
+        request_id: str,
+        item: PlanItem,
+        entry_source: str | None = None,
+    ) -> None:
         if self.diagnostic:
-            self.diagnostic.emit(
-                operation, request_id, item.user_account_id, item.id, item.version
-            )
+            if entry_source is None:
+                self.diagnostic.emit(
+                    operation, request_id, item.user_account_id, item.id, item.version
+                )
+            else:
+                self.diagnostic.emit(
+                    operation,
+                    request_id,
+                    item.user_account_id,
+                    item.id,
+                    item.version,
+                    entry_source=entry_source,
+                )
 
     def create(
-        self, account_id: UUID, intent: PlanIntent, key: str, request_id: str
+        self,
+        account_id: UUID,
+        intent: PlanIntent,
+        key: str,
+        request_id: str,
+        entry_source: str = UNSPECIFIED_ENTRY_SOURCE,
     ) -> PlanItem:
+        # entry_source is diagnostic only: not part of the digest, receipt, item or response.
         if not isinstance(key, str) or not re.fullmatch(
             r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", key
         ):
@@ -137,7 +174,7 @@ class PlanService:
             if self.integration:
                 self.integration.changed(unit, None, item, now)
             unit.commit()
-            self._emit("plan_item_create", request_id, item)
+            self._emit("plan_item_create", request_id, item, normalize_entry_source(entry_source))
             return item
 
     def get(self, account_id: UUID, item_id: UUID, request_id: str) -> PlanItem:

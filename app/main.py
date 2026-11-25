@@ -38,6 +38,8 @@ from app.api.routes.planning import create_planning_router
 from app.application.notifications import NotificationService
 from app.infrastructure.notifications import compose_notifications
 from app.api.routes.notifications import create_notification_router
+from app.api.routes.features import create_features_router
+from app.application.feature_flags import FeatureFlagService
 
 
 AUTHENTICATION_CONTRACT_VERSION = "1.1.0"
@@ -216,6 +218,17 @@ def create_app(
     application.include_router(
         create_notification_router(
             notification_service, onboarding_service, email_session_service
+        )
+    )
+
+    application.include_router(
+        create_features_router(
+            FeatureFlagService(
+                resolved_settings.voice_entry_mode,
+                resolved_settings.voice_entry_allowlist,
+            ),
+            onboarding_service,
+            email_session_service,
         )
     )
 

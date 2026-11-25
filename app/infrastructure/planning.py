@@ -13,7 +13,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select, update, or_, and_
 from sqlalchemy.exc import SQLAlchemyError
 
-from app.application.planning import CreationReceipt, PlanService
+from app.application.planning import CreationReceipt, PlanService, normalize_entry_source
 from app.domain.planning import PlanIntent, PlanItem, PlanUnavailableError, utc
 from app.infrastructure.database_diagnostics import (
     log_database_failure,
@@ -252,6 +252,7 @@ class SafePlanDiagnostic:
         account_id: UUID,
         item_id: UUID | None,
         version: int,
+        entry_source: str | None = None,
     ) -> None:
         if operation not in {
             "today_read",
@@ -262,6 +263,17 @@ class SafePlanDiagnostic:
             "plan_item_complete",
         }:
             return
+        extra: dict[str, object] = {
+            "operation": operation,
+            "outcome": (
+                "unavailable" if operation == "plan_insight_unavailable" else "succeeded"
+            ),
+            "request_id": request_id if len(request_id) <= 64 else "redacted",
+            "version": max(0, version),
+        }
+        if operation == "plan_item_create":
+            # Content-free origin only: one of manual, quick_log, voice, unspecified.
+            extra["entry_source"] = normalize_entry_source(entry_source)
         try:
             LOGGER.info(
                 (
@@ -269,16 +281,7 @@ class SafePlanDiagnostic:
                     if operation == "plan_insight_unavailable"
                     else "planning_operation_succeeded"
                 ),
-                extra={
-                    "operation": operation,
-                    "outcome": (
-                        "unavailable"
-                        if operation == "plan_insight_unavailable"
-                        else "succeeded"
-                    ),
-                    "request_id": request_id if len(request_id) <= 64 else "redacted",
-                    "version": max(0, version),
-                },
+                extra=extra,
             )
         except Exception:
             pass

@@ -191,6 +191,7 @@ def test_openapi_has_stable_unique_operations_and_contract_schemas():
         "get_notification_unread_count",
         "mark_all_notifications_read",
         "mark_notification_read",
+        "get_feature_flags",
     ]
     assert len(operation_ids) == len(set(operation_ids))
     assert schema["paths"]["/health"]["get"]["tags"] == ["Health"]
